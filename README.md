@@ -14,16 +14,6 @@ Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 - Vanilla HTML & CSS & JS.
 - No Cookies, it's bad for your teeth.
 
-## Quick Start
-
-```bash
-$ git clone https://github.com/valine-dev/yacs.git
-$ cd yacs
-$ pip install -r requirements.txt
-vi ./config.toml
-python app/app.py
-```
-
 ## Deploying
 
 ### 1. Install uv.
