@@ -18,6 +18,8 @@ from flask_socketio import (ConnectionRefusedError, SocketIO, emit, join_room,
                             leave_room)
 from webargs import fields, validate
 from webargs.flaskparser import use_args
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 
 # --- INITIALIZATION ---
 
@@ -30,6 +32,9 @@ with open(path.abspath('./config.toml'), 'rb') as file:
     app.config.update(conf['flask'])
     conf.pop('flask')
     app.config.update(conf)
+
+if app.config["app"]["proxy_fix"]:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
 
 if not path.isdir(app.config['res']['path']):
     mkdir(app.config['res']['path'])
@@ -143,7 +148,7 @@ def landing_page():
 
 
 LOGIN_FORM = {
-    'nick': fields.Str(required=True, validate=[validate.Length(min=3, max=16), validate.NoneOf([' '])]),
+    'nick': fields.Str(required=True, validate=[validate.Length(min=3, max=16), validate.ContainsOnly(list(ascii_lowercase + ascii_uppercase + "0123456789_"))]),
     'phrase': fields.Str(),
     'captcha': fields.Str(required=True),
     'identifier': fields.Str(required=True)

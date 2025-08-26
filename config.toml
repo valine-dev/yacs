@@ -14,6 +14,10 @@ user_phrase = "CHANGE_ME"
 log_level = "INFO"
 timeout = 5000 # in milisecond
 
+# Set to true only when the app is behind an reversed proxy!
+# Make sure X-Forwarded-For and X-Forwarded-Host are properly set!
+proxy_fix = false
+
 
 [custom]
 title = "The YACS"
