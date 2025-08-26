@@ -1,0 +1,17 @@
+[project]
+name = "YACS"
+version = "0.1.0"
+description = "yet another chatroom script."
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    {name = "Valine0x", email = "me@valine0x.icu"}
+]
+dependencies = [
+    "bbcode>=1.1.0",
+    "captcha>=0.7.1",
+    "flask>=3.1.1",
+    "flask-socketio>=5.5.1",
+    "gevent>=25.5.1",
+    "webargs>=8.7.0",
+]

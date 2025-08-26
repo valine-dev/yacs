@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }} - ROOM</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icon.png') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
+    <script type="text/javascript" charset="utf-8">
+        const TOKEN = "{{ token }}";
+        const NICK = "{{ nick }}";
+    </script>
+    <script type="text/javascript" charset="utf-8" src="{{ url_for('static', filename='room.js') }}"></script>
+    {% if is_admin%}
+    <script type="text/javascript" charset="utf-8" src="{{ url_for('static', filename='admin.js') }}"></script>
+    {% endif %}
+</head>
+
+<body style = "align-items: center; min-width: 100vw; height: 100vh; background-image: url({{ url_for('static', filename='tile.gif') }})">
+    <audio id="msg_sfx" preload="auto" autoplay="false" src="{{ url_for('static', filename='msg_sent.mp3') }}"></audio>
+    <div class="window" style="width: 15vw; height: 95vh; display: flex; flex-direction: column; max-height: 768px; max-width: 205px">
+    <div class="title-bar">
+    <div class="title-bar-text">CHANNELS</div>
+    <div class="title-bar-controls">
+        <button aria-label="Close"></button>
+    </div>
+    </div>
+        <ul class="tree-view" style="flex: 1; min-height: 0; margin: 0;">
+        <li>{{ title }}
+            <ul id="channel_list"></ul>
+        </li>
+        </ul>
+    <button onclick="refresh_channels()"><svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 32 32"><path fill="#000" d="M27.43 12.19h1.52v7.62h-1.52Zm-1.52 7.62h1.52v3.05h-1.52Zm0-10.67h1.52v3.05h-1.52Zm1.52-1.52V6.1h1.52V4.57h-7.62v7.62h1.53v-1.52h1.52V9.14h1.53V7.62zm-3.05 15.24h1.53v1.52h-1.53Zm-1.52 1.52h1.52v1.53h-1.52Zm-3.05 1.53h3.05v1.52h-3.05Zm-6.1 1.52h6.1v1.52h-6.1ZM12.19 3.05h6.1v1.52h-6.1ZM9.14 4.57h3.05V6.1H9.14ZM7.62 6.1h1.52v1.52H7.62ZM6.1 7.62h1.52v1.52H6.1ZM4.57 24.38v1.53H3.05v1.52h7.62v-7.62H9.14v1.52H7.62v1.53H6.1v1.52z"/><path fill="#000" d="M4.57 19.81H6.1v3.05H4.57Zm0-10.67H6.1v3.05H4.57Zm-1.52 3.05h1.52v7.62H3.05Z"/></svg></button>
+    {% if is_admin %}
+    <button style="width:100" onclick="new_chan()">New Channel</button>
+    <button style="width:100" onclick="del_chan()">Remove Channel</button>
+    <button style="width:100" onclick="re_chan()">Rename Channel</button>
+    <button style="width:100" onclick="sw_chan()">Promote/Demote Channel</button>
+    {% endif %}
+    <pre>{{ motd }}</pre>
+    <div class="status-bar">
+    <p class="status-bar-field">Press F1 for help</p>
+    <p class="status-bar-field">Current</p>
+    <p class="status-bar-field">Online</p>
+    </div>
+    </div>
+    <div class="window" style="width: 60vw; height: 95vh; display: flex; flex-direction: column; max-width: 819px; max-height: 768px">
+    <div class="title-bar">
+    <div class="title-bar-text">CHAT</div>
+    <div class="title-bar-controls">
+        <button aria-label="Close"></button>
+    </div>
+    </div>
+    <div style="display: flex; padding: 5px; height: 2em">
+        <button id="mute_switch" onclick="switch_mute()" style="height: 2em; width: 2em"><svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24"><path fill="#000" d="M11 2H9v2H7v2H5v2H1v8h4v2h2v2h2v2h2zM7 18v-2H5v-2H3v-4h2V8h2V6h2v12zm6-8h2v4h-2zm8-6h-2V2h-6v2h6v2h2v12h-2v2h-6v2h6v-2h2v-2h2V6h-2zm-2 4h-2V6h-4v2h4v8h-4v2h4v-2h2z"/></svg></button>
+        <button onclick="load_more()">Load More...</button>
+        {% if is_admin %}
+        <div style="margin-left: 20px; padding: 0px">
+            <button style="width:100" onclick="del_msg()">Remove Message</button>
+            <button style="width:100" onclick="del_res()">Remove Resource</button>
+            <button style="width:100" onclick="del_user()">Remove User</button>
+        </div>
+        {% endif %}
+    </div>
+    <pre style="flex: 1; height: 100%; overflow: scroll;" id="msgbox"></pre>
+    <div style="display: flex; gap: 5px;">
+        <select style="height: 100%;" id="emotes" onchange="insert_emote(this)" onblur="this.selectedIndex = 0;">
+            <option selected disabled>Emoticons</option>
+            {% for item in emotes %}
+                <option>{{ item }}</option>
+            {% endfor %}
+        </select>
+        <select style="height: 100%;" id="attachment_list" onchange="delete_attach(this)" onblur="this.selectedIndex = 0;">
+            <option selected disabled>Show Attachments</option>
+        </select>
+        <select id="tags" style="height: 100%;" onchange="insert_tag(this)" onblur="this.selectedIndex = 0;">
+            <option selected disabled>Style Tags</option>
+            <option>Bold</option>
+            <option>Italic</option>
+            <option>Undescore</option>
+            <option>Stroke</option>
+            <option>Quote</option>
+        </select>
+        <button onclick="upload()"><svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24"><path fill="#000" d="M10 4h6v2h-6zM8 8V6h2v2zm-4 2V8h4v2zm-2 2v-2h2v2zm0 6H0v-6h2zm0 0h7v2H2zM18 8h-2V6h2zm4 4h-4V8h2v2h2zm0 6v-6h2v6zm0 0v2h-7v-2zM11 9h2v2h2v2h2v2h-4v5h-2v-5H7v-2h2v-2h2z"/></svg></button>
+        <input type="file" id="attachment">
+    </div>
+    <div style="display: flex; height: 10%">
+        <textarea style="flex: 1; resize: none; font-size: medium; font-family: Arial;" id="editor"></textarea>
+        <button onclick="msg_send()"> <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#000" d="M18 16H8v2H6v-2H4v-2h2v-2h2v2h10V4h2v12zM8 12v-2h2v2zm0 6v2h2v-2z"/></svg> </button>
+    </div>
+    </div>
+</body>

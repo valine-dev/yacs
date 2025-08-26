@@ -1,0 +1,14 @@
+Tags for BBCODE
+
+Tag      Usage                             
+b 	     [b]test[/b]
+i 	     [i]test[/i]
+u 	     [u]test[/u]
+s 	     [s]test[/s]
+hr 	     [hr]
+sub 	 x[sub]3[/sub]
+sup 	 x[sup]3[/sup]
+list/* 	 [list][*] item[/list]
+quote 	 [quote]hello[/quote]
+color 	 [color=red]red[/color]
+url 	 [url=www.apple.com]Apple[/url]

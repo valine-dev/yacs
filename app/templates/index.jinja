@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body style="background-image: url({{ url_for('static', filename='tile.gif') }})">
+    <div class="main">
+    <h1>{{ title }}</h1>
+    <div class="window" style="color:black">
+        <div class="title-bar">
+            <div class="title-bar-text">Identify Yourself</div>
+            <div class="title-bar-controls">
+                <button aria-label="Close"></button>
+            </div>
+        </div>
+        <div class="window-body">
+            <form action="/auth" id="login_form" method="post">
+            <div class="field-row">
+                <label for="nick" style="width:10ch">Nickname</label>
+                <input name="nick" id="nick" type="text" />
+            </div>
+            <div class="field-row">
+                <label for="phrase" style="width:10ch">Passphrase</label>
+                <input name="phrase" id="phrase" type="text" />
+            </div>
+            <div class="field-row">
+                <label for="CAPTCHA" style="width:10ch">CAPTCHA</label>
+                <input name="captcha" id="captcha" type="text" />
+            </div>
+            <div style="padding-top: 1ch; align-items: center;"><img style="width: 200px" src="data:image/png;base64,{{ captcha }}"></div>
+            <br>
+            <input type="hidden" name="identifier" type="text" value="{{ identifier }}"/>
+            <input type="submit" value="Login"/>
+            </form>
+        </div>
+    </div>
+    <footer style="margin-top: 5ch;">Powered by <a>YACS</a></footer>
+    </div>
+  </body>
+</html>

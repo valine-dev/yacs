@@ -1,0 +1,58 @@
+@import url("https://unpkg.com/98.css");
+
+body {
+    background-color: black;
+    background-repeat: repeat;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    padding: 0px;
+    margin: 0px;
+}
+
+.main {
+    background-color: rgba(0, 0, 0, 0);
+    min-width: 60vw;
+    min-height: 100vh;
+    display: flex;
+    flex-flow: column nowrap;
+    align-items: center;
+}
+
+h1 {
+    color: white;
+    padding-top: 0.6ch;
+    padding-bottom: 0.6ch;
+    width: 100%;
+    text-align: center;
+    font-family: "Pixelated MS Sans Serif", Arial;
+    letter-spacing: 0;
+}
+
+pre > p {
+    margin-bottom: 1em;
+    margin-top: 0;
+}
+
+footer {
+    color: white;
+}
+
+footer > a {
+    color: red
+}
+
+.cselected {
+    color: blue
+}
+
+blockquote {
+    background-color: black;
+    color:white;
+    padding: 5px;
+}
+
+code {
+    background-color: black;
+    color:white;
+}

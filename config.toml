@@ -1,0 +1,119 @@
+[flask]
+# here you can configure built-in config values defined by flask
+DEBUG = true
+
+[app]
+ip = "0.0.0.0"
+port = 8080
+# turn the mark on if you're exposing the service behind tor
+# for now it's useless
+is_hidden = true
+admin_phrase = "CHANGE_ME_ADMIN"
+# set user_phrase to empty will expose chatroom to the public
+user_phrase = "CHANGE_ME"
+log_level = "INFO"
+timeout = 5000 # in milisecond
+
+
+[custom]
+title = "The YACS"
+motd = "Hello \n uwu"
+emoticons = [
+    "|∀` )",
+    "(つд⊂)",
+    "(ﾟДﾟ≡ﾟДﾟ)",
+    "(＾o＾)ﾉ",
+    "(|||ﾟДﾟ)",
+    "( ﾟ∀ﾟ)",
+    "( ´∀`)",
+    "(*´∀`)",
+    "(*ﾟ∇ﾟ)",
+    "(*ﾟーﾟ)",
+    "(　ﾟ 3ﾟ)",
+    "( ´ー`)",
+    "( ・_ゝ・)",
+    "( ´_ゝ`)",
+    "(*´д`)",
+    "(・ー・)",
+    "(・∀・)",
+    "(ゝ∀･)",
+    "(〃∀〃)",
+    "(*ﾟ∀ﾟ*)",
+    "( ﾟ∀。)",
+    "( `д´)",
+    "(`ε´ )",
+    "(`ヮ´ )",
+    "σ`∀´)",
+    "ﾟ∀ﾟ)σ",
+    "ﾟ ∀ﾟ)ノ",
+    "(╬ﾟдﾟ)",
+    "(|||ﾟдﾟ)",
+    "( ﾟдﾟ)",
+    "Σ( ﾟдﾟ)",
+    "( ;ﾟдﾟ)",
+    "( ;´д`)",
+    "(　д ) ﾟ ﾟ",
+    "( ☉д⊙)",
+    "(((　ﾟдﾟ)))",
+    "( ` ・´)",
+    "( ´д`)",
+    "( -д-)",
+    "(>д<)",
+    "･ﾟ( ﾉд`ﾟ)",
+    "( TдT)",
+    "(￣∇￣)",
+    "(￣3￣)",
+    "(￣ｰ￣)",
+    "(￣ . ￣)",
+    "(￣皿￣)",
+    "(￣艸￣)",
+    "(￣︿￣)",
+    "(￣︶￣)",
+    "ヾ(´ωﾟ｀)",
+    "(*´ω`*)",
+    "(・ω・)",
+    "( ´・ω)",
+    "(｀・ω)",
+    "(´・ω・`)",
+    "(`・ω・´)",
+    "( `_っ´)",
+    "( `ー´)",
+    "( ´_っ`)",
+    "( ´ρ`)",
+    "( ﾟωﾟ)",
+    "(oﾟωﾟo)",
+    "(　^ω^)",
+    "(｡◕∀◕｡)",
+    "/( ◕‿‿◕ )\\",
+    "ヾ(´ε`ヾ)",
+    "(ノﾟ∀ﾟ)ノ",
+    "(σﾟдﾟ)σ",
+    "(σﾟ∀ﾟ)σ",
+    "|дﾟ )",
+    "┃電柱┃",
+    "ﾟ(つд`ﾟ)",
+    "ﾟÅﾟ )",
+    "⊂彡☆))д`)",
+    "⊂彡☆))д´)",
+    "⊂彡☆))∀`)",
+    "(´∀((☆ミつ"
+]
+
+
+[res]
+path = "./resource"
+size_max = 1024 # In Megabytes
+
+
+[captcha]
+length = 4
+max_cache = 60
+expire = 120 # Expire time in seconds
+
+[captcha.options]
+numbers = false
+lowercase = true
+uppercase = false
+
+[db]
+path = "./yacs.db"
