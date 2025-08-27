@@ -93,6 +93,13 @@ def verify_candidate(identifier, challenge, time):
 
 def clean_user(name):
     item = online.pop(name)
+    if item['channel'] != 0:
+        emit('leaving', {'target': name}, to=item['channel'], namespace=item['namespace'])
+        leave_room(
+            item['channel'],
+            item['sid'],
+            item['namespace']
+        )
     disconnect(
         item['sid'],
         item['namespace']
