@@ -1,5 +1,6 @@
 import atexit
 import random
+import stat
 import tomllib
 import uuid
 from base64 import b64encode
@@ -15,7 +16,7 @@ from captcha.image import ImageCaptcha
 from flask import (Flask, Response, redirect, render_template,
                    render_template_string, request, send_file, jsonify)
 from flask_socketio import (ConnectionRefusedError, SocketIO, emit, join_room,
-                            leave_room)
+                            leave_room, disconnect)
 from webargs import fields, validate
 from webargs.flaskparser import use_args
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -34,7 +35,7 @@ with open(path.abspath('./config.toml'), 'rb') as file:
     conf.pop('flask')
     app.config.update(conf)
 
-if app.config["app"]["proxy_fix"]:
+if app.config['app']['proxy_fix']:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
 
 if not path.isdir(app.config['res']['path']):
@@ -46,12 +47,9 @@ logger = app.logger
 socketio = SocketIO(app, cors_allowed_origins='*')
 conn = get_db(app.config['db']['path'], logger)
 
-# Caches across requests
+# Caches
 candidates = dict()
 online = dict()
-channels = dict()
-file_buffer = dict()
-valid_tokens = []
 
 # Precalculations
 SIZE_MAX_BYTE = app.config['res']['size_max'] * 1000000
@@ -64,6 +62,15 @@ challenge_set = ['', ascii_lowercase][options['lowercase']] + \
 image_captcha = ImageCaptcha()
 
 # --- HELPER FUNCTIONS ---
+
+
+def get_channel_member(channel_id: int):
+    resp = []
+    for k, v in online.items():
+        cid = v['channel']
+        if cid == channel_id:
+            resp.append(k)
+    return resp
 
 
 def push_candidate(identifier, challenge, time):
@@ -84,26 +91,31 @@ def verify_candidate(identifier, challenge, time):
     return False
 
 
-def clean_user(nick):
-    item = online.pop(nick)
-    valid_tokens.remove(item['token'])
-    logger.info(f'User {nick} logged out.')
+def clean_user(name):
+    item = online.pop(name)
+    disconnect(
+        item['sid'],
+        item['namespace']
+    )
+    logger.info(f'User {name} logged out.')
 
 
 def time_milisecond():
     return round(time() * 1000)
 
+
 @app.errorhandler(422)
 @app.errorhandler(400)
 def handle_error(err):
-    headers = err.data.get("headers", None)
-    messages = err.data.get("messages", ["Invalid request."])
+    headers = err.data.get('headers', None)
+    messages = err.data.get('messages', ['Invalid request.'])
     if headers:
-        return jsonify({"errors": messages}), err.code, headers
+        return jsonify({'errors': messages}), err.code, headers
     else:
-        return jsonify({"errors": messages}), err.code
+        return jsonify({'errors': messages}), err.code
 
 # --- WRAPPERS ---
+
 
 def login_required(f):
     @wraps(f)
@@ -143,7 +155,7 @@ def admin_login_required(f):
 @app.route('/')
 def landing_page():
     # making captcha
-    identifier = str(uuid.uuid1())
+    identifier = str(uuid.uuid4())
     challenge = ''.join(random.choices(
         challenge_set, k=app.config['captcha']['length']))
     push_candidate(identifier, challenge, time())
@@ -158,7 +170,7 @@ def landing_page():
 
 
 LOGIN_FORM = {
-    'nick': fields.Str(required=True, validate=[validate.Length(min=3, max=16), validate.ContainsOnly(list(ascii_lowercase + ascii_uppercase + "0123456789_"))]),
+    'nick': fields.Str(required=True, validate=[validate.Length(min=3, max=16), validate.ContainsOnly(list(ascii_lowercase + ascii_uppercase + '0123456789_'))]),
     'phrase': fields.Str(),
     'captcha': fields.Str(required=True),
     'identifier': fields.Str(required=True)
@@ -185,9 +197,12 @@ def auth(form):
         online[form['nick']] = dict(
             token=token,
             is_admin=is_admin,
-            last_heartbeat=time_milisecond()
+            last_heartbeat=time_milisecond(),
+            files_pending=dict(),
+            channel=0,
+            sid=None,
+            namespace=None,
         )
-        valid_tokens.append(token)
         return render_template_string(
             '''<form action='/room' name='next' id='next' method='post'><input name='nick' id='nick' type='hidden' value='{{ nick }}' /><input name='token' id='token' type='hidden' value='{{ token }}' /></form><script>document.forms['next'].submit()</script>''',
             nick=form['nick'],
@@ -203,10 +218,12 @@ def room_preview():
     online['test'] = {
         'token': 'test',
         'is_admin': True,
-        'last_heartbeat': time_milisecond()
+        'last_heartbeat': time_milisecond(),
+        'files_pending': dict(),
+        'channel': 0,
+        'sid': None,
+        'namespace': None,
     }
-    if not 'test' in valid_tokens:
-        valid_tokens.append('test')
     return render_template(
         'room.jinja',
         title=app.config['custom']['title'],
@@ -255,7 +272,8 @@ def room_view(form):
 def get_channels():
     auth = request.headers.get('Authorization', default=None)
     nick = str(auth).split(' ')[1]
-    res = conn.execute('SELECT * FROM CHANNEL WHERE IS_DELETED=0 AND (ADMIN_ONLY=0 OR ?=1)', (online[nick]["is_admin"],))
+    res = conn.execute(
+        'SELECT * FROM CHANNEL WHERE IS_DELETED=0 AND (ADMIN_ONLY=0 OR ?=1)', (online[nick]['is_admin'],))
     channels = []
     for row in res.fetchall():
         channels.append({
@@ -273,42 +291,49 @@ def upload_index():
     file = request.files['file']
     name = secure_filename(file.filename)
     mime = file.mimetype
-    token = str(auth).split(' ')[2]
+    uploader = str(auth).split(' ')[1]
     binary = file.read()
     if len(binary) > SIZE_MAX_BYTE:
         return Response(status=400)
     id = str(uuid.uuid4())
-    file_buffer[id] = (binary, name, mime, token)
-    return {'uuid': id}
+    online[uploader]['files_pending'].update({
+        id: (binary, name, mime)
+    })
+    return {'uuid': id, 'file_name': name}
 
 
 @app.route('/submit_upload')
 @login_required
 def upload_submit():
     auth = request.headers.get('Authorization', default=None)
-    if 'recall' in request.args.keys():
-        token = str(auth).split(' ')[2]
-        requested = request.args['recall']
-        if requested not in file_buffer.keys():
+    user = str(auth).split(' ')[1]
+
+    recall = request.args.get('recall', default=None)
+    submit = request.args.get('submit', default=None)
+
+    if recall:
+        if recall not in online[user]['files_pending'].keys():
             return Response(status=400)
-        if file_buffer[requested][3] != token:
-            return Response(status=400)
-        file_buffer.pop(requested)
+        online[user]['files_pending'].pop(recall)
         return Response(status=200)
-    if 'submit' in request.args.keys():
-        token = str(auth).split(' ')[2]
-        id = request.args['submit']
-        if id not in file_buffer.keys():
+
+    if submit:
+        if submit not in online[user]['files_pending'].keys():
             return Response(status=400)
-        if file_buffer[id][3] != token:
-            return Response(status=400)
-        binary, name, mime, _ = file_buffer.pop(id)
+        binary, name, mime = online[user]['files_pending'].pop(submit)
+
+        # Write to disk
         extension = path.splitext(name)[1]
-        # Save file
-        with open(path.abspath(path.join(app.config['res']['path'], f'{id}{extension}')), 'xb') as f:
+        file_path = path.abspath(
+            path.join(app.config['res']['path'], f'{submit}{extension}'))
+        with open(file_path, 'xb') as f:
             f.write(binary)
+
+        # Write to DB
         conn.execute(
-            'INSERT INTO RESOURCE (UUID, FILE_NAME, MIME_TYPE) VALUES (?, ?, ?);', (id, name, mime))
+            'INSERT INTO RESOURCE (UUID, FILE_NAME, MIME_TYPE) VALUES (?, ?, ?);',
+            (submit, name, mime)
+        )
         return Response(status=200)
     return Response(status=400)
 
@@ -357,6 +382,16 @@ def get_messages(channel_id):
         resp.append(msg)
     return resp
 
+@app.route('/fellows')
+@login_required
+def get_fellows():
+    auth = request.headers.get('Authorization', default=None)
+    user = auth.split(' ')[1]
+    channel = online[user]['channel']
+    if channel == 0:
+        return Response(status=404)
+    return {'fellows': get_channel_member(channel)}
+
 # --- PUBLIC APIS ---
 
 
@@ -399,7 +434,8 @@ def get_resource(resource_id):
             (resource_id, )
         )
     except Exception as e:
-        logger.error(f"Error deleting resource {resource_id} with exception {e}")
+        logger.error(
+            f'Error deleting resource {resource_id} with exception {e}')
     return Response(status=404)
 
 # --- ADMIN APIS ---
@@ -461,7 +497,7 @@ def delete_resource(res_id):
             (res_id, )
         )
     except Exception as e:
-        logger.error(f"Error deleting resource {res_id} with exception {e}")
+        logger.error(f'Error deleting resource {res_id} with exception {e}')
         return Response(status=400)
     return Response(status=200)
 
@@ -475,7 +511,7 @@ def delete_msg(id: int):
             (id, )
         )
     except Exception as e:
-        logger.error(f"Error deleting msg {id} with exception {e}")
+        logger.error(f'Error deleting msg {id} with exception {e}')
         return Response(status=400)
     return Response(status=200)
 
@@ -494,18 +530,24 @@ def sw_channel_handler(json):
             return
     except:
         return
+
+    user = json['nick']
     to = json['to']
-    is_admin = online[json['nick']]['is_admin']
+    is_admin = online[user]['is_admin']
     res = conn.execute('SELECT id FROM CHANNEL' +
                        (' WHERE ADMIN_ONLY=0;', '')[is_admin])
     ids = [x[0] for x in res.fetchall()]
-    if json['nick'] in channels.keys():
-        leave_room(channels[json['nick']])
-        emit('leaving', {'target': json['nick']}, to=channels[json['nick']])
-    if to in ids:
-        join_room(to)
-        channels[json['nick']] = to
-        emit('joining', {'target': json['nick']}, to=to)
+
+    if to not in ids:
+        return
+
+    current_channel = online[user]['channel']
+    if current_channel != 0:
+        leave_room(current_channel)
+        emit('leaving', {'target': json['nick']}, to=current_channel)
+    join_room(to)
+    online[user]['channel'] = to
+    emit('joining', {'target': json['nick']}, to=to)
 
 
 @socketio.on('msg_send')
@@ -529,7 +571,7 @@ def msg_send_handler(json):
     }
     cur = conn.execute('INSERT INTO CHAT (BODY, CHANNEL_ID, AUTHOR) VALUES (?,?,?) RETURNING ID;', (
         body,
-        channels[author],
+        online[author]['channel'],
         author
     ))
     (chat_id, ) = cur.fetchone()
@@ -538,7 +580,7 @@ def msg_send_handler(json):
         for a in attachments:
             conn.execute(
                 'INSERT INTO ATTACHMENT (CHAT_ID, RESOURCE_ID) VALUES (?,?);', (chat_id, a))
-    emit('msg_deliver', msg, to=channels[author])
+    emit('msg_deliver', msg, to=online[author]['channel'])
 
 
 @socketio.on('connect')
@@ -548,16 +590,23 @@ def connect_handler(auth):
             return ConnectionRefusedError('Not Authorized')
     except:
         return ConnectionRefusedError('Missing Authorization')
-    logger.info(f'User {auth['nick']} logged in.')
+
+    try:
+        online[auth['nick']]['sid'] = request.sid
+        online[auth['nick']]['namespace'] = request.namespace
+    except:
+        return ConnectionRefusedError('No sid or namespace')
+    else:
+        logger.info(f'User {auth['nick']} logged in.')
 
 
 @socketio.on('heartbeat')
 def heartbeat_handler(json):
     try:
         if online[json['nick']]['token'] != json['token']:
-            return
+            return False
     except:
-        return
+        return False
     online[json['nick']]['last_heartbeat'] = time_milisecond()
 
 

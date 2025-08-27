@@ -46,6 +46,11 @@ footer > a {
     color: blue
 }
 
+blockquote::before {
+    content: "> ";
+    margin: 0;
+}
+
 blockquote {
     background-color: black;
     color:white;

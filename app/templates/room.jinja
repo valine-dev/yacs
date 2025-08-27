@@ -18,7 +18,12 @@
 </head>
 
 <body style = "align-items: center; min-width: 100vw; height: 100vh; background-image: url({{ url_for('static', filename='tile.gif') }})">
-    <audio id="msg_sfx" preload="auto" src="{{ url_for('static', filename='msg_sent.mp3') }}"></audio>
+    <audio id="msg_sfx" preload="auto" src="{{ url_for('static', filename='msg.mp3') }}"></audio>
+    <audio id="join_sfx" preload="auto" src="{{ url_for('static', filename='join.mp3') }}"></audio>
+    <audio id="leave_sfx" preload="auto" src="{{ url_for('static', filename='leave.mp3') }}"></audio>
+    <audio id="welcome_sfx" preload="auto" src="{{ url_for('static', filename='welcome.mp3') }}"></audio>
+    <audio id="file_sfx" preload="auto" src="{{ url_for('static', filename='file.mp3') }}"></audio>
+    <audio id="send_sfx" preload="auto" src="{{ url_for('static', filename='send.mp3') }}"></audio>
     <div class="window" style="width: 15vw; height: 95vh; display: flex; flex-direction: column; max-height: 768px; max-width: 205px">
     <div class="title-bar">
     <div class="title-bar-text">CHANNELS</div>
@@ -26,12 +31,20 @@
         <button aria-label="Close"></button>
     </div>
     </div>
-        <ul class="tree-view" style="flex: 1; min-height: 0; margin: 0;">
+        <ul class="tree-view" style="flex: 2; min-height: 0; margin: 0; overflow:scroll">
         <li>{{ title }}
             <ul id="channel_list"></ul>
         </li>
         </ul>
+    <ul class="tree-view" style="flex: 1; margin: 0; min-height: 0; overflow:scroll">
+    <li>Currently In Channel
+    <ul id="fellows_list">
+    </ul>
+    </li>
+    </ul>
     <button onclick="refresh_channels()"><svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 32 32"><path fill="#000" d="M27.43 12.19h1.52v7.62h-1.52Zm-1.52 7.62h1.52v3.05h-1.52Zm0-10.67h1.52v3.05h-1.52Zm1.52-1.52V6.1h1.52V4.57h-7.62v7.62h1.53v-1.52h1.52V9.14h1.53V7.62zm-3.05 15.24h1.53v1.52h-1.53Zm-1.52 1.52h1.52v1.53h-1.52Zm-3.05 1.53h3.05v1.52h-3.05Zm-6.1 1.52h6.1v1.52h-6.1ZM12.19 3.05h6.1v1.52h-6.1ZM9.14 4.57h3.05V6.1H9.14ZM7.62 6.1h1.52v1.52H7.62ZM6.1 7.62h1.52v1.52H6.1ZM4.57 24.38v1.53H3.05v1.52h7.62v-7.62H9.14v1.52H7.62v1.53H6.1v1.52z"/><path fill="#000" d="M4.57 19.81H6.1v3.05H4.57Zm0-10.67H6.1v3.05H4.57Zm-1.52 3.05h1.52v7.62H3.05Z"/></svg></button>
+    
+    </ul>
     {% if is_admin %}
     <button style="width:100" onclick="new_chan()">New Channel</button>
     <button style="width:100" onclick="del_chan()">Remove Channel</button>
@@ -41,8 +54,6 @@
     <pre>{{ motd }}</pre>
     <div class="status-bar">
     <p class="status-bar-field">Press F1 for help</p>
-    <p class="status-bar-field">Current</p>
-    <p class="status-bar-field">Online</p>
     </div>
     </div>
     <div class="window" style="width: 60vw; height: 95vh; display: flex; flex-direction: column; max-width: 819px; max-height: 768px">
@@ -78,7 +89,7 @@
             <option selected disabled>Style Tags</option>
             <option>Bold</option>
             <option>Italic</option>
-            <option>Undescore</option>
+            <option>Underscore</option>
             <option>Stroke</option>
             <option>Quote</option>
         </select>

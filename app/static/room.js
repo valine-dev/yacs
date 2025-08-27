@@ -23,10 +23,29 @@ setInterval(() => {
 socket.on("connect", async () => {
     await refresh_channels();
     switch_channel(1);
+    if (!is_muted) {
+        document.getElementById("welcome_sfx").play();
+    }
 });
 
 socket.on("channel_updated", async () => {
     refresh_channels();
+});
+
+socket.on("leaving", async (e) => {
+    if (e["target"] == NICK){ return }
+    if (!is_muted) {
+        document.getElementById("leave_sfx").play();
+    }
+    document.getElementById(`fellow-${e["target"]}`).remove()
+});
+
+socket.on("joining", async (e) => {
+    if (e["target"] == NICK){ return }
+    if (!is_muted) {
+        document.getElementById("join_sfx").play();
+    }
+    document.getElementById("fellows_list").innerHTML += `<li id="fellow-${e["target"]}">${e["target"]}</li>`
 });
 
 async function refresh_channels() {
@@ -61,7 +80,12 @@ socket.on("msg_deliver", async (msg) => {
     msgbox.appendChild(rendered);
     msgbox.scrollTop = msgbox.scrollHeight;
     if (!is_muted) {
-        document.getElementById("msg_sfx").play();
+        if (msg["author"] == NICK){
+            document.getElementById("send_sfx").play();
+        } else {
+            document.getElementById("msg_sfx").play();
+        }
+        
     }
 });
 
@@ -147,7 +171,8 @@ async function switch_channel(channel_id) {
     // Refresh messages
     var msgbox = document.getElementById("msgbox");
     msgbox.innerHTML = "";
-    load_more();
+    await load_more();
+    await refresh_fellows();
     msgbox.scrollTop = msgbox.scrollHeight;
 }
 
@@ -168,6 +193,28 @@ async function load_more(count = 30) {
     }
 }
 
+async function refresh_fellows() {
+    var list = document.getElementById("fellows_list")
+    list.innerHTML = ""
+    var resp = await fetch("/fellows",
+        {
+            headers: {
+                Authorization: `Basic ${NICK} ${TOKEN}`,
+            },
+        }
+    )
+    if (resp.ok) {
+        var resp_json = await resp.json()
+        var fellows = resp_json["fellows"]
+        for (var fellow of fellows) {
+            var e = document.createElement("li")
+            e.innerText = fellow
+            e.id = `fellow-${fellow}`
+            list.appendChild(e)
+        }
+    }
+}
+
 async function render_msg(msg) {
     var attachment_ids = msg["attachments"];
     var attachments = [];
@@ -175,7 +222,7 @@ async function render_msg(msg) {
         for (let a of attachment_ids) {
             var resp = await fetch(`/resource_meta/${a}`);
             if (!resp.ok) {
-                continue
+                continue;
             }
             var meta = await resp.json();
             var attach;
@@ -241,6 +288,9 @@ async function upload() {
         attach.id = uuid;
         attach.innerText = fname;
         attachment_list.appendChild(attach);
+        if (!is_muted) {
+            document.getElementById("file_sfx").play();
+        }
         window.alert(`${fname} Uploaded!`);
         file_component.value = "";
     }
@@ -264,11 +314,25 @@ async function delete_attach(node) {
     }
 }
 
+document.addEventListener("DOMContentLoaded", () => {
+    const editor = document.getElementById("editor");
+    if (editor) {
+        editor.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                if (event.shiftKey) {
+                    return; // Allow new line with Shift + Enter
+                } else {
+                    event.preventDefault(); // Prevent default Enter behavior
+                    msg_send(); // Send the message
+                }
+            }
+        });
+    }
+});
+
 document.addEventListener("keydown", (event) => {
     const keyName = event.key;
-    if (event.ctrlKey) {
-        if (keyName === "Enter") {
-            msg_send();
-        }
+    if (keyName == "F1") {
+        window.open("https://github.com/valine-dev/yacs/blob/main/docs/manual.md", "_blank").focus();
     }
 });
