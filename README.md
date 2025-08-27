@@ -53,9 +53,7 @@ $ uv run main.py
 
 ## Usage
 
-### Permission control
-
-Use the passphrase to log in to the chatroom (you can always change it in the config file). To manage channels and possibly delete chats, use the admin passphrase to log in.
+Consult <a href="docs/manual.md">User Manual</a> for guidance.
 
 ## Configuration
 
@@ -76,7 +74,7 @@ admin_phrase = "CHANGE_ME_ADMIN"
 user_phrase = "CHANGE_ME"
 
 log_level = "DEBUG"
-timeout = 5000 # in milisecond
+timeout = 5000 # in milisecond, use for heartbeat
 
 # Set to true only when the app is behind a reverse proxy!
 # Make sure X-Forwarded-For and X-Forwarded-Host are properly set!

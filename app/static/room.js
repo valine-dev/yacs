@@ -186,8 +186,8 @@ async function render_msg(msg) {
             }else if(meta["mime"].startsWith("video")) {
                 attach = document.createElement("video");
                 attach.setAttribute("controls", "")
-                attach.setAttribute("muted", `true`)
                 attach.setAttribute("width", "200")
+                attach.volume = 0;
                 let source = document.createElement("source");
                 source.setAttribute("type", meta["mime"])
                 source.setAttribute("src", `/resource/${a}`)
