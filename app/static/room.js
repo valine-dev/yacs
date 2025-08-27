@@ -183,6 +183,15 @@ async function render_msg(msg) {
                 attach = document.createElement("img");
                 attach.style = "width: 200px";
                 attach.src = `/resource/${a}`;
+            }else if(meta["mime"].startsWith("video")) {
+                attach = document.createElement("video");
+                attach.setAttribute("controls", "")
+                attach.setAttribute("muted", `true`)
+                attach.setAttribute("width", "200")
+                let source = document.createElement("source");
+                source.setAttribute("type", meta["mime"])
+                source.setAttribute("src", `/resource/${a}`)
+                attach.appendChild(source)
             } else {
                 attach = document.createElement("a");
                 attach.href = `/resource/${a}`;

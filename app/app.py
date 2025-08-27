@@ -13,12 +13,13 @@ import bbcode
 from app.db import get_db
 from captcha.image import ImageCaptcha
 from flask import (Flask, Response, redirect, render_template,
-                   render_template_string, request, send_file)
+                   render_template_string, request, send_file, jsonify)
 from flask_socketio import (ConnectionRefusedError, SocketIO, emit, join_room,
                             leave_room)
 from webargs import fields, validate
 from webargs.flaskparser import use_args
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.utils import secure_filename
 
 
 # --- INITIALIZATION ---
@@ -67,7 +68,7 @@ image_captcha = ImageCaptcha()
 
 def push_candidate(identifier, challenge, time):
     if len(candidates) > app.config['captcha']['max_cache']:
-        candidates.pop(candidates.keys()[0])
+        candidates.pop(next(iter(candidates)))
     candidates[identifier] = (challenge, time)
 
 
@@ -92,6 +93,15 @@ def clean_user(nick):
 def time_milisecond():
     return round(time() * 1000)
 
+@app.errorhandler(422)
+@app.errorhandler(400)
+def handle_error(err):
+    headers = err.data.get("headers", None)
+    messages = err.data.get("messages", ["Invalid request."])
+    if headers:
+        return jsonify({"errors": messages}), err.code, headers
+    else:
+        return jsonify({"errors": messages}), err.code
 
 # --- WRAPPERS ---
 
@@ -245,8 +255,7 @@ def room_view(form):
 def get_channels():
     auth = request.headers.get('Authorization', default=None)
     nick = str(auth).split(' ')[1]
-    res = conn.execute('SELECT * FROM CHANNEL WHERE IS_DELETED=0' +
-                       (' AND ADMIN_ONLY=0;', '')[online[nick]["is_admin"]])
+    res = conn.execute('SELECT * FROM CHANNEL WHERE IS_DELETED=0 AND (ADMIN_ONLY=0 OR ?=1)', (online[nick]["is_admin"],))
     channels = []
     for row in res.fetchall():
         channels.append({
@@ -262,7 +271,7 @@ def get_channels():
 def upload_index():
     auth = request.headers.get('Authorization', default=None)
     file = request.files['file']
-    name = file.filename
+    name = secure_filename(file.filename)
     mime = file.mimetype
     token = str(auth).split(' ')[2]
     binary = file.read()
@@ -296,7 +305,7 @@ def upload_submit():
         binary, name, mime, _ = file_buffer.pop(id)
         extension = path.splitext(name)[1]
         # Save file
-        with open(path.abspath(path.join(app.config['res']['path'], f'{id}.{extension}')), 'xb') as f:
+        with open(path.abspath(path.join(app.config['res']['path'], f'{id}{extension}')), 'xb') as f:
             f.write(binary)
         conn.execute(
             'INSERT INTO RESOURCE (UUID, FILE_NAME, MIME_TYPE) VALUES (?, ?, ?);', (id, name, mime))
@@ -317,6 +326,7 @@ def get_messages(channel_id):
         offset = int(request.args['offset'])
 
     # check your fucking privilege
+    auth = request.headers.get('Authorization', default=None)
     nick = str(auth).split(' ')[1]
     priv = conn.execute(
         'SELECT ADMIN_ONLY FROM CHANNEL WHERE ID=?;', (channel_id,))
@@ -371,10 +381,26 @@ def get_resource(resource_id):
     if not row:
         return Response(status=404)
     extension = path.splitext(row[0])[1]
-    return send_file(path.abspath(path.join(
+    file_path = path.abspath(path.join(
         app.config['res']['path'],
         f'{resource_id}.{extension}'
-    )), mimetype=row[1], download_name=row[0])
+    ))
+    if path.exists(file_path):
+        return send_file(file_path, mimetype=row[1], download_name=row[0])
+    file_path = path.abspath(path.join(
+        app.config['res']['path'],
+        f'{resource_id}{extension}'
+    ))
+    if path.exists(file_path):
+        return send_file(file_path, mimetype=row[1], download_name=row[0])
+    try:
+        conn.execute(
+            'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
+            (resource_id, )
+        )
+    except Exception as e:
+        logger.error(f"Error deleting resource {resource_id} with exception {e}")
+    return Response(status=404)
 
 # --- ADMIN APIS ---
 
@@ -434,7 +460,8 @@ def delete_resource(res_id):
             'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
             (res_id, )
         )
-    except:
+    except Exception as e:
+        logger.error(f"Error deleting resource {res_id} with exception {e}")
         return Response(status=400)
     return Response(status=200)
 
@@ -447,7 +474,8 @@ def delete_msg(id: int):
             'UPDATE CHAT SET IS_DELETED=1 WHERE ID=?;',
             (id, )
         )
-    except:
+    except Exception as e:
+        logger.error(f"Error deleting msg {id} with exception {e}")
         return Response(status=400)
     return Response(status=200)
 

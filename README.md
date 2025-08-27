@@ -8,7 +8,7 @@ Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 
 - Multiple channels.
 - Admins.
-- Files and embedded images.
+- Files and embedded images/videos.
 - BBCode.
 - CAPTCHA.
 - Vanilla HTML & CSS & JS.
