@@ -18,7 +18,7 @@
 </head>
 
 <body style = "align-items: center; min-width: 100vw; height: 100vh; background-image: url({{ url_for('static', filename='tile.gif') }})">
-    <audio id="msg_sfx" preload="auto" autoplay="false" src="{{ url_for('static', filename='msg_sent.mp3') }}"></audio>
+    <audio id="msg_sfx" preload="auto" src="{{ url_for('static', filename='msg_sent.mp3') }}"></audio>
     <div class="window" style="width: 15vw; height: 95vh; display: flex; flex-direction: column; max-height: 768px; max-width: 205px">
     <div class="title-bar">
     <div class="title-bar-text">CHANNELS</div>

@@ -280,6 +280,8 @@ def upload_submit():
     if 'recall' in request.args.keys():
         token = str(auth).split(' ')[2]
         requested = request.args['recall']
+        if requested not in file_buffer.keys():
+            return Response(status=400)
         if file_buffer[requested][3] != token:
             return Response(status=400)
         file_buffer.pop(requested)
@@ -287,6 +289,8 @@ def upload_submit():
     if 'submit' in request.args.keys():
         token = str(auth).split(' ')[2]
         id = request.args['submit']
+        if id not in file_buffer.keys():
+            return Response(status=400)
         if file_buffer[id][3] != token:
             return Response(status=400)
         binary, name, mime, _ = file_buffer.pop(id)
@@ -303,6 +307,8 @@ def upload_submit():
 @app.route('/messages/<int:channel_id>')
 @login_required
 def get_messages(channel_id):
+    if channel_id == 0:
+        return Response(status=404)
     count = 30
     if 'count' in request.args.keys():
         count = int(request.args['count'])
@@ -314,6 +320,8 @@ def get_messages(channel_id):
     nick = str(auth).split(' ')[1]
     priv = conn.execute(
         'SELECT ADMIN_ONLY FROM CHANNEL WHERE ID=?;', (channel_id,))
+    if not priv:
+        return Response(status=403)
     priv = priv.fetchone()[0]
     if priv == 1 and online[nick]['is_admin'] == 0:
         return Response(status=403)
@@ -516,7 +524,7 @@ def connect_handler(auth):
 
 
 @socketio.on('heartbeat')
-def connect_handler(json):
+def heartbeat_handler(json):
     try:
         if online[json['nick']]['token'] != json['token']:
             return
