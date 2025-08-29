@@ -25,13 +25,13 @@
             </div>
             <div class="field-row">
                 <label for="phrase" style="width:10ch">Passphrase</label>
-                <input name="phrase" id="phrase" type="text" />
+                <input name="phrase" id="phrase" type="text" width="100%" />
             </div>
             <div class="field-row">
                 <label for="CAPTCHA" style="width:10ch">CAPTCHA</label>
-                <input name="captcha" id="captcha" type="text" />
+                <input name="captcha" id="captcha" type="text" width="100%" />
             </div>
-            <div style="padding-top: 1ch;"><img style="width: 200px" src="data:image/png;base64,{{ captcha }}"></div>
+            <img style="width: 100%; margin: 1ch 0" src="data:image/png;base64,{{ captcha }}">
             <br>
             <input type="hidden" name="identifier" type="text" value="{{ identifier }}"/>
             <input type="submit" value="Login"/>
