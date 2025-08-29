@@ -14,6 +14,10 @@ Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 - Vanilla HTML & CSS & JS.
 - No Cookies, it's bad for your teeth.
 
+## Try It Out Right Now!
+
+Join [The YACS Demo Server](https://chat.valine0x.icu) with passphrase **`the-yacs`** to evaluate how it goes! ~~For free!~~
+
 ## Deploying
 
 ### 1. Install uv.
