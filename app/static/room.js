@@ -18,7 +18,7 @@ async function heartbeat() {
 
 setInterval(() => {
     heartbeat();
-}, 4000);
+}, TIMEOUT - 1000);
 
 socket.on("connect", async () => {
     await refresh_channels();

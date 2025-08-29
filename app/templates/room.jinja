@@ -10,6 +10,7 @@
     <script type="text/javascript" charset="utf-8">
         const TOKEN = "{{ token }}";
         const NICK = "{{ nick }}";
+        const TIMEOUT = Number({{timeout}});
     </script>
     <script type="text/javascript" charset="utf-8" src="{{ url_for('static', filename='room.js') }}"></script>
     {% if is_admin%}

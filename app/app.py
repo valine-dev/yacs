@@ -161,6 +161,10 @@ def admin_login_required(f):
 
 @app.route('/')
 def landing_page():
+    # get possible failure callback
+    failed = request.args.get('failed', default=None)
+    if failed:
+        failed = failed.replace('+', ' ')
     # making captcha
     identifier = str(uuid.uuid4())
     challenge = ''.join(random.choices(
@@ -172,7 +176,8 @@ def landing_page():
         'index.jinja',
         title=app.config['custom']['title'],
         captcha=captcha_data,
-        identifier=identifier
+        identifier=identifier,
+        failed=failed
     )
 
 
@@ -210,12 +215,9 @@ def auth(form):
             sid=None,
             namespace=None,
         )
-        return render_template_string(
-            '''<form action='/room' name='next' id='next' method='post'><input name='nick' id='nick' type='hidden' value='{{ nick }}' /><input name='token' id='token' type='hidden' value='{{ token }}' /></form><script>document.forms['next'].submit()</script>''',
-            nick=form['nick'],
-            token=token,
-        )
-    return redirect('/?failed=Wrong+CAPTCHA')
+        logger.info(f'User {form['nick']} logged in.')
+        return redirect(f'/room?nickname={form['nick']}&token={token}')
+    return redirect('/?failed=CAPTCHA+failed')
 
 
 @app.route('/room-preview', methods=['POST', 'GET'])
@@ -243,23 +245,25 @@ def room_preview():
 
 
 ROOM_FORM = {
-    'nick': fields.Str(validate=lambda x: (x in online.keys()), required=True),
+    'nickname': fields.Str(validate=lambda x: (x in online.keys()), required=True),
     'token': fields.Str(required=True),
 }
 
 
-@app.route('/room', methods=['POST', 'GET'])
-@use_args(ROOM_FORM, location='form')
-def room_view(form):
-    if request.method == 'GET':
-        return redirect('/')
-    nick = form['nick']
-    token = form['token']
+@app.route('/room')
+@use_args(ROOM_FORM, location='query')
+def room_view(auth):
+    nick = auth['nickname']
+    token = auth['token']
     try:
         if online[nick]['token'] != token:
-            return redirect('/')
+            return redirect('/?failed=Invalid+authentication')
     except:
-        return redirect('/')
+        return redirect('/?failed=Invalid+authentication')
+    if online[nick]['last_heartbeat']:
+        if (time_milisecond() - online[nick]['last_heartbeat']) > app.config['app']['timeout']:
+                clean_user(nick)
+                return redirect('/?failed=Authentication+expired')
     return render_template(
         'room.jinja',
         title=app.config['custom']['title'],
@@ -267,7 +271,8 @@ def room_view(form):
         nick=nick,
         token=token,
         motd=app.config['custom']['motd'],
-        is_admin=online[nick]['is_admin']
+        is_admin=online[nick]['is_admin'],
+        timeout = app.config['app']['timeout'],
     )
 
 # --- SECRET API ---
@@ -604,8 +609,20 @@ def connect_handler(auth):
     except:
         return ConnectionRefusedError('No sid or namespace')
     else:
-        logger.info(f'User {auth['nick']} logged in.')
+        if (time_milisecond() - online[auth['nick']]['last_heartbeat']) > app.config['app']['timeout']:
+            clean_user(auth['nick'])
+            return ConnectionRefusedError('Not Authorized')
+        logger.info(f'User {auth['nick']} connected.')
 
+@socketio.on('disconnect')
+def disconnect_handler():
+    nick = None
+    for k, v in online.items():
+        if v["sid"] == request.sid:
+            nick = k
+    if nick:
+        logger.info(f'User {nick} disconnected.')
+        online[nick]['last_heartbeat'] = time_milisecond()
 
 @socketio.on('heartbeat')
 def heartbeat_handler(json):
