@@ -16,7 +16,7 @@ Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 
 ## Try It Out Right Now!
 
-Join [The YACS Demo Server](https://chat.valine0x.icu) right now with passphrase **`the-yacs`** to evaluate the program! ~~For free!~~
+Join [The YACS Demo Server](https://chat.valine0x.icu) right now with passphrase **`the-yacs`** to see YACS in action!
 
 ## Deploying
 

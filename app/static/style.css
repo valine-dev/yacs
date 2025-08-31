@@ -27,6 +27,7 @@ h1 {
     text-align: center;
     font-family: "Pixelated MS Sans Serif", Arial;
     letter-spacing: 0;
+    text-shadow: black 5px 5px;
 }
 
 pre > p {
