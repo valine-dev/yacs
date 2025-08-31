@@ -273,27 +273,45 @@ async function upload() {
     var data = new FormData();
     data.append("file", files[0]);
     var fname = files[0].name;
-    var response = await fetch("/index_upload", {
-        method: "POST",
-        body: data,
-        headers: {
-            Authorization: `Basic ${NICK} ${TOKEN}`,
-        },
-    });
-    if (response.ok) {
-        var uuid = (await response.json()).uuid;
-        file_buffer[fname] = uuid;
-        var attachment_list = document.getElementById("attachment_list");
-        var attach = document.createElement("option");
-        attach.id = uuid;
-        attach.innerText = fname;
-        attachment_list.appendChild(attach);
-        if (!is_muted) {
-            document.getElementById("file_sfx").play();
+
+    var indicator = document.getElementById("upload_indicator")
+    indicator.innerHTML = `<p style="margin: 0;">Uploading ${fname}...</p><div class="progress-indicator segmented" style="width: 100%; flex: 1; height:50%"><span id="upload_progress" class="progress-indicator-bar" style="width: 0%;"></span></div>`
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/index_upload", true);
+
+    xhr.setRequestHeader(
+        "Authorization",
+        `Basic ${NICK} ${TOKEN}`
+    )
+    xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+            var progress = document.getElementById("upload_progress")
+            const percentComplete = (event.loaded / event.total) * 100;
+            progress.setAttribute("style", `width: ${percentComplete}%`);
         }
-        window.alert(`${fname} Uploaded!`);
-        file_component.value = "";
-    }
+    });
+
+    xhr.onload = () => {
+        if (xhr.status === 200) {
+            var uuid = (JSON.parse(xhr.response))["uuid"];
+            file_buffer[fname] = uuid;
+            var attachment_list = document.getElementById("attachment_list");
+            var attach = document.createElement("option");
+            attach.id = uuid;
+            attach.innerText = fname;
+            attachment_list.appendChild(attach);
+            if (!is_muted) {
+                document.getElementById("file_sfx").play();
+            }
+            window.alert(`${fname} Uploaded!`);
+            file_component.value = "";
+        } else {
+            window.alert(`${fname} Failed to upload!`);
+        }
+        var indicator = document.getElementById("upload_indicator")
+        indicator.innerHTML = "";
+    };
+    xhr.send(data)
 }
 
 async function delete_attach(node) {
