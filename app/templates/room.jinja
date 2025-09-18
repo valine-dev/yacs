@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>{{ title }} - ROOM</title>
+    <title>{{ title }} - THE ROOM</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icon.png') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA==" crossorigin="anonymous"></script>
@@ -59,7 +59,7 @@
     </div>
     <div class="window" style="width: 60vw; height: 95vh; display: flex; flex-direction: column; max-width: 819px; max-height: 768px">
     <div class="title-bar">
-    <div class="title-bar-text">CHAT</div>
+    <div class="title-bar-text">Welcome! {{ nick }}</div>
     <div class="title-bar-controls">
         <button aria-label="Close"></button>
     </div>

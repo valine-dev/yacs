@@ -36,7 +36,7 @@ async function del_chan() {
 async function sw_chan() {
     var id = Number(window.prompt("Channel's id"));
     var resp = await fetch(`/channel?sw_priv=${id}`, {
-        method: "UPDATE",
+        method: "PUT",
         headers: auth,
     });
     if (resp.ok) {

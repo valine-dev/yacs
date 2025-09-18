@@ -2,6 +2,8 @@ var tag_list = ["b", "i", "u", "s", "quote", "mention"];
 
 var current_channel = 0;
 
+var is_uploading = false;
+
 var socket = io({
     auth: {
         nick: NICK,
@@ -263,6 +265,10 @@ async function render_msg(msg) {
 var file_buffer = {};
 
 async function upload() {
+    if (is_uploading) {
+        window.alert("Please wait till the current file's uploaded!");
+        return
+    }
     var file_component = document.getElementById("attachment");
     var files = file_component.files;
 
@@ -310,8 +316,10 @@ async function upload() {
         }
         var indicator = document.getElementById("upload_indicator")
         indicator.innerHTML = "";
+        is_uploading = false;
     };
     xhr.send(data)
+    is_uploading = true;
 }
 
 async function delete_attach(node) {

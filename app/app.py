@@ -1,6 +1,5 @@
 import atexit
 import random
-import stat
 import tomllib
 import uuid
 from base64 import b64encode
@@ -9,13 +8,14 @@ from functools import wraps
 from os import path, mkdir
 from string import ascii_lowercase, ascii_uppercase
 from time import time
+from collections import OrderedDict
 
 import bbcode
 from app.db import get_db
 from captcha.image import ImageCaptcha
 from flask import (Flask, Response, redirect, render_template,
-                   render_template_string, request, send_file, jsonify)
-from flask_socketio import (ConnectionRefusedError, SocketIO, emit, join_room,
+                   request, send_file, jsonify)
+from flask_socketio import (SocketIO, emit, join_room,
                             leave_room, disconnect)
 from webargs import fields, validate
 from webargs.flaskparser import use_args
@@ -48,7 +48,7 @@ socketio = SocketIO(app, cors_allowed_origins='*')
 conn = get_db(app.config['db']['path'], logger)
 
 # Caches
-candidates = dict()
+candidates: OrderedDict = OrderedDict()
 online = dict()
 
 # Precalculations
@@ -74,8 +74,8 @@ def get_channel_member(channel_id: int):
 
 
 def push_candidate(identifier, challenge, time):
-    if len(candidates) > app.config['captcha']['max_cache']:
-        candidates.pop(next(iter(candidates)))
+    if len(candidates) >= app.config['captcha']['max_cache']:
+        candidates.popitem(last=False)
     candidates[identifier] = (challenge, time)
 
 
@@ -94,7 +94,8 @@ def verify_candidate(identifier, challenge, time):
 def clean_user(name):
     item = online.pop(name)
     if item['channel'] != 0:
-        emit('leaving', {'target': name}, to=item['channel'], namespace=item['namespace'])
+        emit('leaving', {'target': name},
+             to=item['channel'], namespace=item['namespace'])
         leave_room(
             item['channel'],
             item['sid'],
@@ -109,6 +110,12 @@ def clean_user(name):
 
 def time_milisecond():
     return round(time() * 1000)
+
+
+def garbage_collect():
+    for k, v in list(online.items()):
+        if (time_milisecond() - v['last_heartbeat']) > app.config['app']['timeout']:
+            clean_user(k)
 
 
 @app.errorhandler(422)
@@ -130,7 +137,10 @@ def login_required(f):
         auth = request.headers.get('Authorization', default=None)
         if not auth:
             return Response(status=401)
-        _, nick, token = str(auth).split(' ')
+        try:
+            _, nick, token = str(auth).split(' ')
+        except:
+            return Response(status=401)
         if nick not in online.keys():
             return Response(status=401)
         if not online[nick]['token'] == token:
@@ -145,7 +155,10 @@ def admin_login_required(f):
         auth = request.headers.get('Authorization', default=None)
         if not auth:
             return Response(status=401)
-        _, nick, token = str(auth).split(' ')
+        try:
+            _, nick, token = str(auth).split(' ')
+        except:
+            return Response(status=401)
         if nick not in online.keys():
             return Response(status=401)
         if not online[nick]['token'] == token:
@@ -197,11 +210,7 @@ def auth(form):
             return redirect('/?failed=Wrong+passphrase')
 
     if verify_candidate(form['identifier'], form['captcha'], time()):
-        # clean any dangling user
-        keys = list(online.keys())
-        for user in keys:
-            if (time_milisecond() - online[user]['last_heartbeat']) > app.config['app']['timeout']:
-                clean_user(user)
+        garbage_collect()
         if form['nick'] in online.keys():
             return redirect('/?failed=User+exists')
         token = str(uuid.uuid4())
@@ -214,6 +223,8 @@ def auth(form):
             channel=0,
             sid=None,
             namespace=None,
+            is_uploading=False,
+            is_alive=False
         )
         logger.info(f'User {form['nick']} logged in.')
         return redirect(f'/room?nickname={form['nick']}&token={token}')
@@ -224,7 +235,8 @@ def auth(form):
 def room_preview():
     if not app.config['DEBUG']:
         return Response(status=404)
-    online['test'] = {
+    name = 'test_' + ''.join(random.choices(challenge_set, k=5))
+    online[name] = {
         'token': 'test',
         'is_admin': True,
         'last_heartbeat': time_milisecond(),
@@ -232,12 +244,14 @@ def room_preview():
         'channel': 0,
         'sid': None,
         'namespace': None,
+        'is_uploading': False,
+        'is_alive': False,
     }
     return render_template(
         'room.jinja',
         title=app.config['custom']['title'],
         token='test',
-        nick='test',
+        nick=name,
         emotes=app.config['custom']['emoticons'],
         motd=app.config['custom']['motd'],
         is_admin=True
@@ -262,8 +276,8 @@ def room_view(auth):
         return redirect('/?failed=Invalid+authentication')
     if online[nick]['last_heartbeat']:
         if (time_milisecond() - online[nick]['last_heartbeat']) > app.config['app']['timeout']:
-                clean_user(nick)
-                return redirect('/?failed=Authentication+expired')
+            clean_user(nick)
+            return redirect('/?failed=Authentication+expired')
     return render_template(
         'room.jinja',
         title=app.config['custom']['title'],
@@ -272,7 +286,7 @@ def room_view(auth):
         token=token,
         motd=app.config['custom']['motd'],
         is_admin=online[nick]['is_admin'],
-        timeout = app.config['app']['timeout'],
+        timeout=app.config['app']['timeout'],
     )
 
 # --- SECRET API ---
@@ -300,17 +314,33 @@ def get_channels():
 @login_required
 def upload_index():
     auth = request.headers.get('Authorization', default=None)
-    file = request.files['file']
-    name = secure_filename(file.filename)
-    mime = file.mimetype
     uploader = str(auth).split(' ')[1]
+    if online[uploader]['is_uploading']:
+        return Response(status=429)
+    # lock
+    online[uploader]['is_uploading'] = True
+
+    file = request.files.get("file", default=None)
+    if file is None:
+        online[uploader]['is_uploading'] = False
+        return Response(status=400)
+
+    name = file.filename
+    if name is None:
+        online[uploader]['is_uploading'] = False
+        return Response(status=400)
+
+    name = secure_filename(name)
+    mime = file.mimetype
     binary = file.read()
     if len(binary) > SIZE_MAX_BYTE:
+        online[uploader]['is_uploading'] = False
         return Response(status=400)
     id = str(uuid.uuid4())
     online[uploader]['files_pending'].update({
         id: (binary, name, mime)
     })
+    online[uploader]['is_uploading'] = False
     return {'uuid': id, 'file_name': name}
 
 
@@ -365,11 +395,12 @@ def get_messages(channel_id):
     # check your fucking privilege
     auth = request.headers.get('Authorization', default=None)
     nick = str(auth).split(' ')[1]
-    priv = conn.execute(
+    cur = conn.execute(
         'SELECT ADMIN_ONLY FROM CHANNEL WHERE ID=?;', (channel_id,))
-    if not priv:
+    row = cur.fetchone()
+    if row is None:
         return Response(status=403)
-    priv = priv.fetchone()[0]
+    priv = row[0]
     if priv == 1 and online[nick]['is_admin'] == 0:
         return Response(status=403)
 
@@ -394,10 +425,15 @@ def get_messages(channel_id):
         resp.append(msg)
     return resp
 
+
 @app.route('/fellows')
 @login_required
 def get_fellows():
     auth = request.headers.get('Authorization', default=None)
+    if auth == None:
+        # auth is guaranteed to be valid after decoration
+        # so uh this is merely a trick to disable static checker
+        return Response(status=400)
     user = auth.split(' ')[1]
     channel = online[user]['channel']
     if channel == 0:
@@ -453,18 +489,18 @@ def get_resource(resource_id):
 # --- ADMIN APIS ---
 
 
-@app.route('/channel', methods=['POST', 'UPDATE', 'DELETE'])
+@app.route('/channel', methods=['POST', 'PUT', 'DELETE'])
 @admin_login_required
 def channel_control():
     if request.method == 'POST':
         try:
             name = request.get_json()['name']
         except:
-            Response(code=415)
+            return Response(status=415)
         conn.execute(
             'INSERT INTO CHANNEL (NAME, ADMIN_ONLY) VALUES (?, 0)', (name, ))
         return Response(status=200)
-    elif request.method == 'UPDATE':
+    elif request.method == 'PUT':
         if 'sw_priv' in request.args.keys():
             id = int(request.args['sw_priv'])
             conn.execute(
@@ -573,7 +609,7 @@ def msg_send_handler(json):
     if json['body'] == '':
         return
     body: str = bbcode.render_html(json['body'])
-    attachments: list = json['attachments']
+    attachments: list = json.get('attachments', [])
     time: str = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
     msg = {
         'author': author,
@@ -599,30 +635,37 @@ def msg_send_handler(json):
 def connect_handler(auth):
     try:
         if online[auth['nick']]['token'] != auth['token']:
-            return ConnectionRefusedError('Not Authorized')
+            raise ConnectionRefusedError('Not Authorized')
     except:
-        return ConnectionRefusedError('Missing Authorization')
+        raise ConnectionRefusedError('Missing Authorization')
 
     try:
-        online[auth['nick']]['sid'] = request.sid
-        online[auth['nick']]['namespace'] = request.namespace
+        # to make static checking happy
+        online[auth['nick']]['sid'] = getattr(request, 'sid', None)
+        online[auth['nick']]['namespace'] = getattr(request, 'namespace', None)
     except:
-        return ConnectionRefusedError('No sid or namespace')
+        raise ConnectionRefusedError('No sid or namespace')
     else:
         if (time_milisecond() - online[auth['nick']]['last_heartbeat']) > app.config['app']['timeout']:
             clean_user(auth['nick'])
-            return ConnectionRefusedError('Not Authorized')
+            raise ConnectionRefusedError('Not Authorized')
+        if online[auth['nick']]['is_alive']:
+            raise ConnectionRefusedError('Duplicate Session')
         logger.info(f'User {auth['nick']} connected.')
+        online[auth['nick']]['is_alive'] = True
+
 
 @socketio.on('disconnect')
 def disconnect_handler():
     nick = None
     for k, v in online.items():
-        if v["sid"] == request.sid:
+        if v["sid"] == getattr(request, 'sid', None):
             nick = k
     if nick:
         logger.info(f'User {nick} disconnected.')
+        online[nick]['is_alive'] = False
         online[nick]['last_heartbeat'] = time_milisecond()
+
 
 @socketio.on('heartbeat')
 def heartbeat_handler(json):
@@ -631,6 +674,7 @@ def heartbeat_handler(json):
             return False
     except:
         return False
+    online[json['nick']]['is_alive'] = True
     online[json['nick']]['last_heartbeat'] = time_milisecond()
 
 

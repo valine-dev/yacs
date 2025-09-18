@@ -3,6 +3,7 @@ Yet Another Chatroom Script
 
 Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 
+![Splash Screen](docs/the-yacs.jpeg)
 
 ## Featuring
 
@@ -66,7 +67,7 @@ Copy the following to `config.toml` and make sure you change the phrases.
 ```toml
 [flask]
 # here you can configure built-in config values defined by flask
-DEBUG = true
+DEBUG = false # DO NOT SET TO `true` WHEN EXPOSING TO PUBLIC!
 
 [app]
 # The app itself will only exposed through plain HTTP and it's strongly discorage to do so directly to public web. Use a reverse proxy to encrypt public connection over HTTP.
