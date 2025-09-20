@@ -27,19 +27,23 @@ Create a venv with python version 3.13 or greater.
 
 ```bash
 $ python -m venv .venv
+```
 
-# Activate venv in bash
+```bash
+# Activate venv in *nix shell (e.g. bash, zsh)
 $ source .venv/bin/activate
+```
 
+```pwsh
 # Activate venv in pwsh
-> . .venv/Scripts/Activate.ps1"
+> . .venv\Scripts\Activate.ps1"
 ```
 
 
 Then, install the package inside venv.
 
 ```bash
-$(.venv) pip install yacscript
+(.venv) pip install yacscript
 ```
 
 Create a configuration file and edit it to your liking.
@@ -47,7 +51,7 @@ Create a configuration file and edit it to your liking.
 For reference, see the <a href="#configuration">configuration section</a>.
 
 ```bash
-$(.venv) vi ./config.toml
+(.venv) vi ./config.toml
 ```
 
 Finally, you run the server within the venv
@@ -122,6 +126,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/path/to/yacs
 Environment="PATH=/path/to/yacs/.venv/bin"
+# Notice the difference to deploying from package!
 ExecStart=/path/to/uv run yacs-run --config /path/to/config.toml
 
 [Install]
@@ -207,11 +212,6 @@ title = "My YACS Server"
 motd = "Hello!\nRule No.1!"
 ```
 
-
-## Customization
-
-Yes, you can rewrite templates in `./app/templates/` and static assets in `./app/static/` to customize ya site. It's written in jinja2 template syntax.
-
 ## Acknowledgement
 YACS will not be possible without following existing projects.
 
@@ -224,7 +224,7 @@ YACS will not be possible without following existing projects.
 
 
 ## Loicense
-Oi mate! Got a loicense for that project Govna? Yes, and it is the best one.
+Oi mate! Got a loicense for that project Govna? Yes, and it is the best one!
 
 YACS is licensed under WTFPL with NO WARRANTY.
 
