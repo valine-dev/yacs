@@ -1,4 +1,4 @@
-PRAGMA foreign_keys = ON;
+SCHEMA = '''PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS CHAT (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,4 +33,39 @@ CREATE TABLE IF NOT EXISTS ATTACHMENT (
 );
 
 INSERT INTO CHANNEL (NAME,ADMIN_ONLY)
-VALUES ('Default Channel', 0);
+VALUES ('Default Channel', 0);'''
+
+CONFIG_DEFAULT = {
+    'DEBUG': True,
+    'app': {
+        'ip': '0.0.0.0',
+        'port': 8080,
+        'admin_phrase': 'admin',
+        'user_phrase': '',
+        'log_level': 'INFO',
+        'timeout': 5000,
+        'proxy_fix': False,
+    },
+    'custom': {
+        'title': 'The YACS',
+        'motd': 'Heya!',
+        'emoticons': ['(*ﾟ∇ﾟ)'],
+    },
+    'res': {
+        'path': './resource',
+        'size_max': 1024
+    },
+    'captcha': {
+        'length': 4,
+        'max_cache': 60,
+        'expire': 120,
+        'options': {
+            'numbers': False,
+            'lowercase': True,
+            'uppercase': False,
+        }
+    },
+    'db': {
+        'path': './yacs.db'
+    }
+}

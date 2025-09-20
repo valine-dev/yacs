@@ -50,6 +50,11 @@ socket.on("joining", async (e) => {
     document.getElementById("fellows_list").innerHTML += `<li id="fellow-${e["target"]}">${e["target"]}</li>`
 });
 
+socket.on("kicked", async () => {
+    window.alert("You're kicked out :(")
+    window.location.replace("/");
+})
+
 async function refresh_channels() {
     var clist = document.getElementById("channel_list");
     clist.innerHTML = "";

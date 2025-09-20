@@ -12,6 +12,7 @@ from collections import OrderedDict
 
 import bbcode
 from app.db import get_db
+from app.definitions import CONFIG_DEFAULT
 from captcha.image import ImageCaptcha
 from flask import (Flask, Response, redirect, render_template,
                    request, send_file, jsonify)
@@ -23,45 +24,61 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 
-# --- INITIALIZATION ---
+# --- GLOBAL DEFINITIONS ---
 
 app = Flask(__name__)
-
-# Read configuration
-with open(path.abspath('./config.toml'), 'rb') as file:
-    conf = tomllib.load(file)
-    # read built-in values
-    app.config.update(conf['flask'])
-    conf.pop('flask')
-    app.config.update(conf)
-
-if app.config['app']['proxy_fix']:
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
-
-if not path.isdir(app.config['res']['path']):
-    mkdir(app.config['res']['path'])
-
-app.logger.setLevel(app.config['app']['log_level'])
-logger = app.logger
-
 socketio = SocketIO(app, cors_allowed_origins='*')
-conn = get_db(app.config['db']['path'], logger)
 
 # Caches
 candidates: OrderedDict = OrderedDict()
 online = dict()
 
-# Precalculations
-SIZE_MAX_BYTE = app.config['res']['size_max'] * 1000000
-
-# Setup captcha challenge
-options = app.config['captcha']['options']
-challenge_set = ['', ascii_lowercase][options['lowercase']] + \
-                ['', ascii_uppercase][options['uppercase']] + \
-                ['', '0123456789'][options['numbers']]
-image_captcha = ImageCaptcha()
 
 # --- HELPER FUNCTIONS ---
+
+def deep_update(dst: dict, src: dict) -> None:
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            deep_update(dst[k], v)
+        else:
+            dst[k] = v
+
+def initialization(config=None):
+    app.config.update(CONFIG_DEFAULT)
+    if config is not None:
+        if path.isfile(path.abspath(config)):
+            with open(path.abspath(config), 'rb') as file:
+                try:
+                    conf = tomllib.load(file)
+                except tomllib.TOMLDecodeError as e:
+                    return e
+                # read built-in values
+                top = conf.get('flask', None)
+                if top:
+                    app.config.update(conf.pop('flask'))
+                deep_update(app.config, conf)
+    if app.config['app']['proxy_fix']:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
+    if not path.isdir(app.config['res']['path']):
+        mkdir(app.config['res']['path'])
+
+    # Making global variables
+    # TODO: consider changing them to vars inside app
+    global logger
+    global conn
+    global SIZE_MAX_BYTE
+    global challenge_set
+    global image_captcha
+    app.logger.setLevel(app.config['app']['log_level'])
+    logger = app.logger
+    conn = get_db(app.config['db']['path'], logger)
+    SIZE_MAX_BYTE = app.config['res']['size_max'] * 1000000
+    options = app.config['captcha']['options']
+    challenge_set = ['', ascii_lowercase][options['lowercase']] + \
+                    ['', ascii_uppercase][options['uppercase']] + \
+                    ['', '0123456789'][options['numbers']]
+    image_captcha = ImageCaptcha()
+    return 'ok'
 
 
 def get_channel_member(channel_id: int):
@@ -101,6 +118,11 @@ def clean_user(name):
             item['sid'],
             item['namespace']
         )
+    emit(
+        'kicked',
+        to=item['sid'],
+        namespace=item['namespace']
+    )
     disconnect(
         item['sid'],
         item['namespace']
@@ -678,8 +700,11 @@ def heartbeat_handler(json):
     online[json['nick']]['last_heartbeat'] = time_milisecond()
 
 
-def exit():
-    conn.close()
+def cleanup():
+    try:
+        conn.close()
+    except:
+        pass
 
 
-atexit.register(exit)
+atexit.register(cleanup)

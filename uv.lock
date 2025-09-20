@@ -376,12 +376,13 @@ wheels = [
 ]
 
 [[package]]
-name = "yacs"
-version = "0.2.0"
-source = { virtual = "." }
+name = "yacscript"
+version = "0.3.0"
+source = { editable = "." }
 dependencies = [
     { name = "bbcode" },
     { name = "captcha" },
+    { name = "click" },
     { name = "flask" },
     { name = "flask-socketio" },
     { name = "gevent" },
@@ -392,6 +393,7 @@ dependencies = [
 requires-dist = [
     { name = "bbcode", specifier = ">=1.1.0" },
     { name = "captcha", specifier = ">=0.7.1" },
+    { name = "click", specifier = ">=8.2.1" },
     { name = "flask", specifier = ">=3.1.1" },
     { name = "flask-socketio", specifier = ">=5.5.1" },
     { name = "gevent", specifier = ">=25.5.1" },

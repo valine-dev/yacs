@@ -19,9 +19,63 @@ Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 
 Join [The YACS Demo Server](https://chat.valine0x.icu) right now with passphrase **`the-yacs`** to see YACS in action!
 
-## Deploying
+## Deployment
 
-### 1. Install uv.
+### 1. Deploy with venv (Recommended)
+
+Create a venv with python version 3.13 or greater.
+
+```bash
+$ python -m venv .venv
+
+# Activate venv in bash
+$ source .venv/bin/activate
+
+# Activate venv in pwsh
+> . .venv/Scripts/Activate.ps1"
+```
+
+
+Then, install the package inside venv.
+
+```bash
+$(.venv) pip install yacscript
+```
+
+Create a configuration file and edit it to your liking.
+
+For reference, see the <a href="#configuration">configuration section</a>.
+
+```bash
+$(.venv) vi ./config.toml
+```
+
+Finally, you run the server within the venv
+
+In addition to that, you might want to deploy the program as a daemon. Here's an example of a possible simple unit file for systemd.
+
+Assuming you have installed the venv as `/path/to/.venv`, for example `/opt/yacs/.venv`, making `/path/to/` means `/opt/yacs/` for the setup.
+
+```ini
+[Unit]
+Description=YACS Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to
+Environment="PATH=/path/to/.venv/bin"
+ExecStart=/path/to/.venv/bin/yacs-run --config /path/to/config.toml
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 2. Deploy from source (with uv)
+
+Deploying from source gives you access to the latest features but may be unstable
+
+To deploy from source, first you need to install uv.
 
 ```bash
 # Install with pip.
@@ -34,35 +88,55 @@ $ curl -LsSf https://astral.sh/uv/install.sh | sh
 $ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-### 2. Clone the repo.
+Then, clone the repo.
+
 ```bash
 $ git clone https://github.com/valine-dev/yacs.git
 $ cd yacs
 ```
 
-### 3. Fill out the form, will ya?
+Create a config file, and edit it to your liking.
+
+For reference, see the <a href="#configuration">configuration section</a>.
+
 ```bash
 $ vi ./config.toml
 ```
-**MAKE SURE YOU HAVE SET YOUR OWN `admin_phrase` AND `user_phrase`**
 
-See <a href="## Configuration">Configuration</a> for more detail.
-
-### 4. Start the server
-
-This will install the venv and dependencies along the way.
+Finally, run the server, dependencies and venv will be installed along the way.
 
 ```bash
-$ uv run main.py
+$ uv run yacs-run --config config.toml
 ```
 
-## Usage
+Additionally, it's also possible to make a daemon service out of deployment from source.
+
+An example unit file is shown as below.
+
+```ini
+[Unit]
+Description=YACS Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/yacs
+Environment="PATH=/path/to/yacs/.venv/bin"
+ExecStart=/path/to/uv run yacs-run --config /path/to/config.toml
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## User Manual
 
 Consult <a href="docs/manual.md">User Manual</a> for guidance.
 
 ## Configuration
 
-Copy the following to `config.toml` and make sure you change the phrases.
+The program comes with a built in config, so you might want to only write fields that you need to deviates from default. 
+
+All possible fields are shown below.
 
 ```toml
 [flask]
@@ -70,7 +144,7 @@ Copy the following to `config.toml` and make sure you change the phrases.
 DEBUG = false # DO NOT SET TO `true` WHEN EXPOSING TO PUBLIC!
 
 [app]
-# The app itself will only exposed through plain HTTP and it's strongly discorage to do so directly to public web. Use a reverse proxy to encrypt public connection over HTTP.
+# The app itself will only exposed through plain HTTP and it's strongly discorage to do so directly to public web. Use a reverse proxy with TLS in front of the app.
 ip = "0.0.0.0"
 port = 8080
 
@@ -78,7 +152,7 @@ admin_phrase = "CHANGE_ME_ADMIN"
 # set user_phrase to empty will expose chatroom to the public
 user_phrase = "CHANGE_ME"
 
-log_level = "DEBUG"
+log_level = "INFO"
 timeout = 5000 # in milisecond, use for heartbeat
 
 # Set to true only when the app is behind a reverse proxy!
@@ -118,6 +192,21 @@ uppercase = false
 path = "./yacs.db"
 ```
 
+And, an example config could look like this.
+
+```toml
+[flask]
+DEBUG = false
+
+[app]
+admin_phrase = "this-is-admin"
+user_phrase = "hello"
+
+[custom]
+title = "My YACS Server"
+motd = "Hello!\nRule No.1!"
+```
+
 
 ## Customization
 
@@ -137,7 +226,7 @@ YACS will not be possible without following existing projects.
 ## Loicense
 Oi mate! Got a loicense for that project Govna? Yes, and it is the best one.
 
-YACS is licensed under WTFTPL with NO WARRANTY.
+YACS is licensed under WTFPL with NO WARRANTY.
 
 <a href="http://www.wtfpl.net/"><img
        src="http://www.wtfpl.net/wp-content/uploads/2012/12/wtfpl-badge-4.png"
