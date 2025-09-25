@@ -1,5 +1,5 @@
 from .app import views, DefaultNamespace
-from os import mkdir, path
+from os import makedirs, path
 import click
 from flask import Flask
 from .definitions import CONFIG_DEFAULT
@@ -30,7 +30,7 @@ def create_app(config=None) -> tuple[Flask, SocketIO]:
                     conf = tomllib.load(file)
                 except tomllib.TOMLDecodeError as e:
                     app.logger.critical(
-                        f'Initialization failed while parsing config file: {app}')
+                        f'Initialization failed while parsing config file: {e}')
                     app.logger.warning('Starting YACS without config file...')
                 else:
                     top = conf.get('flask', None)
@@ -41,7 +41,7 @@ def create_app(config=None) -> tuple[Flask, SocketIO]:
         app.logger.warning('Starting YACS without config file...')
 
     if not path.isdir(app.config['res']['path']):
-        mkdir(app.config['res']['path'])
+        makedirs(app.config['res']['path'], exist_ok=True)
 
     # Set pre-calculated values
     app.config.update({'runtime': {}})
@@ -57,7 +57,8 @@ def create_app(config=None) -> tuple[Flask, SocketIO]:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
 
     # Create socket.io instance
-    socketio = SocketIO(app, cors_allowed_origins=app.config['app']['cors_allowed_origins'])
+    socketio = SocketIO(
+        app, cors_allowed_origins=app.config['app']['cors_allowed_origins'])
 
     # Attach routes
     app.register_blueprint(views)
