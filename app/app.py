@@ -1,33 +1,27 @@
-import atexit
 import random
-import tomllib
 import uuid
 from base64 import b64encode
 from datetime import UTC, datetime
 from functools import wraps
-from os import path, mkdir
+from os import path
 from string import ascii_lowercase, ascii_uppercase
 from time import time
 from collections import OrderedDict
 
 import bbcode
-from app.db import get_db
-from app.definitions import CONFIG_DEFAULT
-from captcha.image import ImageCaptcha
-from flask import (Flask, Response, redirect, render_template,
-                   request, send_file, jsonify)
-from flask_socketio import (SocketIO, emit, join_room,
-                            leave_room, disconnect)
+from flask import (Response, redirect, render_template,
+                   request, send_file, jsonify, current_app, Blueprint, g)
+from flask_socketio import (emit, join_room,
+                            leave_room, disconnect, Namespace)
 from webargs import fields, validate
 from webargs.flaskparser import use_args
-from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
+from captcha.image import ImageCaptcha
+
+from .db import get_db
 
 
-# --- GLOBAL DEFINITIONS ---
-
-app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins='*')
+views = Blueprint('views', __name__)
 
 # Caches
 candidates: OrderedDict = OrderedDict()
@@ -35,50 +29,6 @@ online = dict()
 
 
 # --- HELPER FUNCTIONS ---
-
-def deep_update(dst: dict, src: dict) -> None:
-    for k, v in src.items():
-        if isinstance(v, dict) and isinstance(dst.get(k), dict):
-            deep_update(dst[k], v)
-        else:
-            dst[k] = v
-
-def initialization(config=None):
-    app.config.update(CONFIG_DEFAULT)
-    if config is not None:
-        if path.isfile(path.abspath(config)):
-            with open(path.abspath(config), 'rb') as file:
-                try:
-                    conf = tomllib.load(file)
-                except tomllib.TOMLDecodeError as e:
-                    return e
-                # read built-in values
-                top = conf.get('flask', None)
-                if top:
-                    app.config.update(conf.pop('flask'))
-                deep_update(app.config, conf)
-    if app.config['app']['proxy_fix']:
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)
-    if not path.isdir(app.config['res']['path']):
-        mkdir(app.config['res']['path'])
-
-    # Making global variables
-    # TODO: consider changing them to vars inside app
-    global logger
-    global conn
-    global SIZE_MAX_BYTE
-    global challenge_set
-    global image_captcha
-    app.logger.setLevel(app.config['app']['log_level'])
-    logger = app.logger
-    conn = get_db(app.config['db']['path'], logger)
-    SIZE_MAX_BYTE = app.config['res']['size_max'] * 1000000
-    options = app.config['captcha']['options']
-    challenge_set = ['', ascii_lowercase][options['lowercase']] + \
-                    ['', ascii_uppercase][options['uppercase']] + \
-                    ['', '0123456789'][options['numbers']]
-    image_captcha = ImageCaptcha()
-    return 'ok'
 
 
 def get_channel_member(channel_id: int):
@@ -91,7 +41,7 @@ def get_channel_member(channel_id: int):
 
 
 def push_candidate(identifier, challenge, time):
-    if len(candidates) >= app.config['captcha']['max_cache']:
+    if len(candidates) >= current_app.config['captcha']['max_cache']:
         candidates.popitem(last=False)
     candidates[identifier] = (challenge, time)
 
@@ -101,7 +51,7 @@ def verify_candidate(identifier, challenge, time):
         candidate = candidates.pop(identifier)
     except:
         return False
-    if (time - candidate[1]) > app.config['captcha']['expire']:
+    if (time - candidate[1]) > current_app.config['captcha']['expire']:
         return False
     if challenge == candidate[0]:
         return True
@@ -127,7 +77,7 @@ def clean_user(name):
         item['sid'],
         item['namespace']
     )
-    logger.info(f'User {name} logged out.')
+    current_app.logger.info(f'User {name} logged out.')
 
 
 def time_milisecond():
@@ -136,12 +86,12 @@ def time_milisecond():
 
 def garbage_collect():
     for k, v in list(online.items()):
-        if (time_milisecond() - v['last_heartbeat']) > app.config['app']['timeout']:
+        if (time_milisecond() - v['last_heartbeat']) > current_app.config['app']['timeout']:
             clean_user(k)
 
 
-@app.errorhandler(422)
-@app.errorhandler(400)
+@views.errorhandler(422)
+@views.errorhandler(400)
 def handle_error(err):
     headers = err.data.get('headers', None)
     messages = err.data.get('messages', ['Invalid request.'])
@@ -159,14 +109,18 @@ def login_required(f):
         auth = request.headers.get('Authorization', default=None)
         if not auth:
             return Response(status=401)
+
         try:
             _, nick, token = str(auth).split(' ')
         except:
             return Response(status=401)
-        if nick not in online.keys():
-            return Response(status=401)
-        if not online[nick]['token'] == token:
-            return Response(status=401)
+        else:
+            if nick not in online.keys():
+                return Response(status=401)
+            if not online[nick]['token'] == token:
+                return Response(status=401)
+            g.nick = nick
+            g.token = token
         return f(*args, **kwargs)
     return decorated
 
@@ -177,16 +131,20 @@ def admin_login_required(f):
         auth = request.headers.get('Authorization', default=None)
         if not auth:
             return Response(status=401)
+
         try:
             _, nick, token = str(auth).split(' ')
         except:
             return Response(status=401)
-        if nick not in online.keys():
-            return Response(status=401)
-        if not online[nick]['token'] == token:
-            return Response(status=401)
-        if not online[nick]['is_admin']:
-            return Response(status=401)
+        else:
+            if nick not in online.keys():
+                return Response(status=401)
+            if not online[nick]['token'] == token:
+                return Response(status=401)
+            if not online[nick]['is_admin']:
+                return Response(status=401)
+            g.nick = nick
+            g.token = token
         return f(*args, **kwargs)
     return decorated
 
@@ -194,7 +152,7 @@ def admin_login_required(f):
 # --- VIEW ROUTES ---
 # ROUTES HERE ARE SPECIFIALLY FOR RENDERING VIEWS
 
-@app.route('/')
+@views.route('/')
 def landing_page():
     # get possible failure callback
     failed = request.args.get('failed', default=None)
@@ -203,13 +161,14 @@ def landing_page():
     # making captcha
     identifier = str(uuid.uuid4())
     challenge = ''.join(random.choices(
-        challenge_set, k=app.config['captcha']['length']))
+        current_app.config['runtime']['challenge_set'], k=current_app.config['captcha']['length']))
     push_candidate(identifier, challenge, time())
+    image_captcha = ImageCaptcha()
     data = image_captcha.generate(challenge).read()
     captcha_data = b64encode(data).decode()
     return render_template(
         'index.jinja',
-        title=app.config['custom']['title'],
+        title=current_app.config['custom']['title'],
         captcha=captcha_data,
         identifier=identifier,
         failed=failed
@@ -224,11 +183,11 @@ LOGIN_FORM = {
 }
 
 
-@app.route('/auth', methods=['POST'])
+@views.route('/auth', methods=['POST'])
 @use_args(LOGIN_FORM, location='form')
 def auth(form):
-    if form['phrase'] != app.config['app']['admin_phrase']:
-        if form['phrase'] != app.config['app']['user_phrase']:
+    if form['phrase'] != current_app.config['app']['admin_phrase']:
+        if form['phrase'] != current_app.config['app']['user_phrase']:
             return redirect('/?failed=Wrong+passphrase')
 
     if verify_candidate(form['identifier'], form['captcha'], time()):
@@ -236,7 +195,8 @@ def auth(form):
         if form['nick'] in online.keys():
             return redirect('/?failed=User+exists')
         token = str(uuid.uuid4())
-        is_admin = (form['phrase'] == app.config['app']['admin_phrase'])
+        is_admin = (form['phrase'] ==
+                    current_app.config['app']['admin_phrase'])
         online[form['nick']] = dict(
             token=token,
             is_admin=is_admin,
@@ -248,16 +208,16 @@ def auth(form):
             is_uploading=False,
             is_alive=False
         )
-        logger.info(f'User {form['nick']} logged in.')
+        current_app.logger.info(f'User {form['nick']} logged in.')
         return redirect(f'/room?nickname={form['nick']}&token={token}')
     return redirect('/?failed=CAPTCHA+failed')
 
 
-@app.route('/room-preview', methods=['POST', 'GET'])
+@views.route('/room-preview', methods=['POST', 'GET'])
 def room_preview():
-    if not app.config['DEBUG']:
+    if not current_app.config['DEBUG']:
         return Response(status=404)
-    name = 'test_' + ''.join(random.choices(challenge_set, k=5))
+    name = 'test_' + ''.join(random.choices(ascii_lowercase, k=5))
     online[name] = {
         'token': 'test',
         'is_admin': True,
@@ -271,11 +231,11 @@ def room_preview():
     }
     return render_template(
         'room.jinja',
-        title=app.config['custom']['title'],
+        title=current_app.config['custom']['title'],
         token='test',
         nick=name,
-        emotes=app.config['custom']['emoticons'],
-        motd=app.config['custom']['motd'],
+        emotes=current_app.config['custom']['emoticons'],
+        motd=current_app.config['custom']['motd'],
         is_admin=True
     )
 
@@ -286,7 +246,7 @@ ROOM_FORM = {
 }
 
 
-@app.route('/room')
+@views.route('/room')
 @use_args(ROOM_FORM, location='query')
 def room_view(auth):
     nick = auth['nickname']
@@ -297,29 +257,29 @@ def room_view(auth):
     except:
         return redirect('/?failed=Invalid+authentication')
     if online[nick]['last_heartbeat']:
-        if (time_milisecond() - online[nick]['last_heartbeat']) > app.config['app']['timeout']:
+        if (time_milisecond() - online[nick]['last_heartbeat']) > current_app.config['app']['timeout']:
             clean_user(nick)
             return redirect('/?failed=Authentication+expired')
     return render_template(
         'room.jinja',
-        title=app.config['custom']['title'],
-        emotes=app.config['custom']['emoticons'],
+        title=current_app.config['custom']['title'],
+        emotes=current_app.config['custom']['emoticons'],
         nick=nick,
         token=token,
-        motd=app.config['custom']['motd'],
+        motd=current_app.config['custom']['motd'],
         is_admin=online[nick]['is_admin'],
-        timeout=app.config['app']['timeout'],
+        timeout=current_app.config['app']['timeout'],
     )
 
 # --- SECRET API ---
 # ROUTES HERE NEED TO BE CALLED BY LOGGED IN CLIENT SCRIPT
 
 
-@app.route('/channels')
+@views.route('/channels')
 @login_required
 def get_channels():
-    auth = request.headers.get('Authorization', default=None)
-    nick = str(auth).split(' ')[1]
+    nick = g.get('nick')
+    conn = get_db()
     res = conn.execute(
         'SELECT * FROM CHANNEL WHERE IS_DELETED=0 AND (ADMIN_ONLY=0 OR ?=1)', (online[nick]['is_admin'],))
     channels = []
@@ -332,11 +292,10 @@ def get_channels():
     return channels
 
 
-@app.route('/index_upload', methods=['POST'])
+@views.route('/index_upload', methods=['POST'])
 @login_required
 def upload_index():
-    auth = request.headers.get('Authorization', default=None)
-    uploader = str(auth).split(' ')[1]
+    uploader = g.get('nick')
     if online[uploader]['is_uploading']:
         return Response(status=429)
     # lock
@@ -355,7 +314,7 @@ def upload_index():
     name = secure_filename(name)
     mime = file.mimetype
     binary = file.read()
-    if len(binary) > SIZE_MAX_BYTE:
+    if len(binary) > current_app.config['runtime']['SIZE_MAX_BYTE']:
         online[uploader]['is_uploading'] = False
         return Response(status=400)
     id = str(uuid.uuid4())
@@ -366,11 +325,10 @@ def upload_index():
     return {'uuid': id, 'file_name': name}
 
 
-@app.route('/submit_upload')
+@views.route('/submit_upload')
 @login_required
 def upload_submit():
-    auth = request.headers.get('Authorization', default=None)
-    user = str(auth).split(' ')[1]
+    user = g.get('nick')
 
     recall = request.args.get('recall', default=None)
     submit = request.args.get('submit', default=None)
@@ -389,11 +347,12 @@ def upload_submit():
         # Write to disk
         extension = path.splitext(name)[1]
         file_path = path.abspath(
-            path.join(app.config['res']['path'], f'{submit}{extension}'))
+            path.join(current_app.config['res']['path'], f'{submit}{extension}'))
         with open(file_path, 'xb') as f:
             f.write(binary)
 
         # Write to DB
+        conn = get_db()
         conn.execute(
             'INSERT INTO RESOURCE (UUID, FILE_NAME, MIME_TYPE) VALUES (?, ?, ?);',
             (submit, name, mime)
@@ -402,7 +361,7 @@ def upload_submit():
     return Response(status=400)
 
 
-@app.route('/messages/<int:channel_id>')
+@views.route('/messages/<int:channel_id>')
 @login_required
 def get_messages(channel_id):
     if channel_id == 0:
@@ -415,8 +374,8 @@ def get_messages(channel_id):
         offset = int(request.args['offset'])
 
     # check your fucking privilege
-    auth = request.headers.get('Authorization', default=None)
-    nick = str(auth).split(' ')[1]
+    nick = g.get('nick')
+    conn = get_db()
     cur = conn.execute(
         'SELECT ADMIN_ONLY FROM CHANNEL WHERE ID=?;', (channel_id,))
     row = cur.fetchone()
@@ -448,15 +407,10 @@ def get_messages(channel_id):
     return resp
 
 
-@app.route('/fellows')
+@views.route('/fellows')
 @login_required
 def get_fellows():
-    auth = request.headers.get('Authorization', default=None)
-    if auth == None:
-        # auth is guaranteed to be valid after decoration
-        # so uh this is merely a trick to disable static checker
-        return Response(status=400)
-    user = auth.split(' ')[1]
+    user = g.get('nick')
     channel = online[user]['channel']
     if channel == 0:
         return Response(status=404)
@@ -465,8 +419,10 @@ def get_fellows():
 # --- PUBLIC APIS ---
 
 
-@app.route('/resource_meta/<resource_id>')
+@views.route('/resource_meta/<resource_id>')
 def get_resource_meta(resource_id):
+
+    conn = get_db()
     row = conn.execute(
         'SELECT FILE_NAME, MIME_TYPE FROM RESOURCE WHERE IS_EXPIRED=0 AND UUID=?;', (resource_id, ))
     row = row.fetchone()
@@ -478,8 +434,9 @@ def get_resource_meta(resource_id):
     }
 
 
-@app.route('/resource/<resource_id>')
+@views.route('/resource/<resource_id>')
 def get_resource(resource_id):
+    conn = get_db()
     row = conn.execute(
         'SELECT FILE_NAME, MIME_TYPE FROM RESOURCE WHERE IS_EXPIRED=0 AND UUID=?;', (resource_id, ))
     row = row.fetchone()
@@ -487,13 +444,13 @@ def get_resource(resource_id):
         return Response(status=404)
     extension = path.splitext(row[0])[1]
     file_path = path.abspath(path.join(
-        app.config['res']['path'],
+        current_app.config['res']['path'],
         f'{resource_id}.{extension}'
     ))
     if path.exists(file_path):
         return send_file(file_path, mimetype=row[1], download_name=row[0])
     file_path = path.abspath(path.join(
-        app.config['res']['path'],
+        current_app.config['res']['path'],
         f'{resource_id}{extension}'
     ))
     if path.exists(file_path):
@@ -504,16 +461,17 @@ def get_resource(resource_id):
             (resource_id, )
         )
     except Exception as e:
-        logger.error(
+        current_app.logger.error(
             f'Error deleting resource {resource_id} with exception {e}')
     return Response(status=404)
 
 # --- ADMIN APIS ---
 
 
-@app.route('/channel', methods=['POST', 'PUT', 'DELETE'])
+@views.route('/channel', methods=['POST', 'PUT', 'DELETE'])
 @admin_login_required
 def channel_control():
+    conn = get_db()
     if request.method == 'POST':
         try:
             name = request.get_json()['name']
@@ -549,7 +507,7 @@ def channel_control():
     return Response(status=404)
 
 
-@app.route('/online/<name>', methods=['DELETE'])
+@views.route('/online/<name>', methods=['DELETE'])
 @admin_login_required
 def kick_user(name):
     if name in online.keys():
@@ -558,153 +516,141 @@ def kick_user(name):
     return Response(status=400)
 
 
-@app.route('/resource/<res_id>', methods=['DELETE'])
+@views.route('/resource/<res_id>', methods=['DELETE'])
 @admin_login_required
 def delete_resource(res_id):
+    conn = get_db()
     try:
         conn.execute(
             'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
             (res_id, )
         )
     except Exception as e:
-        logger.error(f'Error deleting resource {res_id} with exception {e}')
+        current_app.logger.error(
+            f'Error deleting resource {res_id} with exception {e}')
         return Response(status=400)
     return Response(status=200)
 
 
-@app.route('/message/<int:id>', methods=['DELETE'])
+@views.route('/message/<int:id>', methods=['DELETE'])
 @admin_login_required
 def delete_msg(id: int):
+    conn = get_db()
     try:
         conn.execute(
             'UPDATE CHAT SET IS_DELETED=1 WHERE ID=?;',
             (id, )
         )
     except Exception as e:
-        logger.error(f'Error deleting msg {id} with exception {e}')
+        current_app.logger.error(f'Error deleting msg {id} with exception {e}')
         return Response(status=400)
     return Response(status=200)
 
 
 # --- SOCKET EVENTS ---
 
-@socketio.on('updating_channel')
-def updated_channel():
-    emit('channel_updated')
-
-
-@socketio.on('sw_channel')
-def sw_channel_handler(json):
-    try:
-        if json['token'] != online[json['nick']]['token']:
-            return
-    except:
-        return
-
-    user = json['nick']
-    to = json['to']
-    is_admin = online[user]['is_admin']
-    res = conn.execute('SELECT id FROM CHANNEL' +
-                       (' WHERE ADMIN_ONLY=0;', '')[is_admin])
-    ids = [x[0] for x in res.fetchall()]
-
-    if to not in ids:
-        return
-
-    current_channel = online[user]['channel']
-    if current_channel != 0:
-        leave_room(current_channel)
-        emit('leaving', {'target': json['nick']}, to=current_channel)
-    join_room(to)
-    online[user]['channel'] = to
-    emit('joining', {'target': json['nick']}, to=to)
-
-
-@socketio.on('msg_send')
-def msg_send_handler(json):
-    author: str = json['author']
-    token: str = json['token']
-    if not author in online.keys():
-        return
-    if online[author]['token'] != token:
-        return
-    if json['body'] == '':
-        return
-    body: str = bbcode.render_html(json['body'])
-    attachments: list = json.get('attachments', [])
-    time: str = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
-    msg = {
-        'author': author,
-        'datetime': time,
-        'body': body,
-        'attachments': attachments
-    }
-    cur = conn.execute('INSERT INTO CHAT (BODY, CHANNEL_ID, AUTHOR) VALUES (?,?,?) RETURNING ID;', (
-        body,
-        online[author]['channel'],
-        author
-    ))
-    (chat_id, ) = cur.fetchone()
-    msg.update({'id': chat_id})
-    if attachments != []:
-        for a in attachments:
-            conn.execute(
-                'INSERT INTO ATTACHMENT (CHAT_ID, RESOURCE_ID) VALUES (?,?);', (chat_id, a))
-    emit('msg_deliver', msg, to=online[author]['channel'])
-
-
-@socketio.on('connect')
-def connect_handler(auth):
-    try:
-        if online[auth['nick']]['token'] != auth['token']:
-            raise ConnectionRefusedError('Not Authorized')
-    except:
-        raise ConnectionRefusedError('Missing Authorization')
-
-    try:
-        # to make static checking happy
-        online[auth['nick']]['sid'] = getattr(request, 'sid', None)
-        online[auth['nick']]['namespace'] = getattr(request, 'namespace', None)
-    except:
-        raise ConnectionRefusedError('No sid or namespace')
-    else:
-        if (time_milisecond() - online[auth['nick']]['last_heartbeat']) > app.config['app']['timeout']:
-            clean_user(auth['nick'])
-            raise ConnectionRefusedError('Not Authorized')
-        if online[auth['nick']]['is_alive']:
-            raise ConnectionRefusedError('Duplicate Session')
-        logger.info(f'User {auth['nick']} connected.')
-        online[auth['nick']]['is_alive'] = True
-
-
-@socketio.on('disconnect')
-def disconnect_handler():
-    nick = None
-    for k, v in online.items():
-        if v["sid"] == getattr(request, 'sid', None):
-            nick = k
-    if nick:
-        logger.info(f'User {nick} disconnected.')
-        online[nick]['is_alive'] = False
-        online[nick]['last_heartbeat'] = time_milisecond()
-
-
-@socketio.on('heartbeat')
-def heartbeat_handler(json):
-    try:
-        if online[json['nick']]['token'] != json['token']:
+class DefaultNamespace(Namespace):
+    def on_connect(self, auth):
+        if online.get(auth['nick'], None) is None:
             return False
-    except:
-        return False
-    online[json['nick']]['is_alive'] = True
-    online[json['nick']]['last_heartbeat'] = time_milisecond()
+        try:
+            if online[auth['nick']]['token'] != auth['token']:
+                return False
+        except:
+            return False
 
+        try:
+            # to make static checking happy
+            online[auth['nick']]['sid'] = getattr(request, 'sid', None)
+            online[auth['nick']]['namespace'] = getattr(
+                request, 'namespace', None)
+        except:
+            return False
+        else:
+            if (time_milisecond() - online[auth['nick']]['last_heartbeat']) > current_app.config['app']['timeout']:
+                clean_user(auth['nick'])
+                return False
+            if online[auth['nick']]['is_alive']:
+                return False
+            current_app.logger.info(f'User {auth['nick']} connected.')
+            online[auth['nick']]['is_alive'] = True
 
-def cleanup():
-    try:
-        conn.close()
-    except:
-        pass
+    def on_disconnect(self, reason):
+        nick = None
+        for k, v in online.items():
+            if v["sid"] == getattr(request, 'sid', None):
+                nick = k
+        if nick:
+            current_app.logger.info(f'User {nick} disconnected. {reason}')
+            online[nick]['is_alive'] = False
+            online[nick]['last_heartbeat'] = time_milisecond()
 
+    def on_sw_channel(self, json):
+        try:
+            if json['token'] != online[json['nick']]['token']:
+                return False
+        except:
+            return False
 
-atexit.register(cleanup)
+        user = json['nick']
+        to = json['to']
+        is_admin = online[user]['is_admin']
+        conn = get_db()
+        res = conn.execute('SELECT id FROM CHANNEL' +
+                           (' WHERE ADMIN_ONLY=0;', '')[is_admin])
+        ids = [x[0] for x in res.fetchall()]
+
+        if to not in ids:
+            return False
+
+        current_channel = online[user]['channel']
+        if current_channel != 0:
+            leave_room(current_channel)
+            emit('leaving', {'target': json['nick']}, to=current_channel)
+        join_room(to)
+        online[user]['channel'] = to
+        emit('joining', {'target': json['nick']}, to=to)
+
+    def on_msg_send(self, json):
+        author: str = json['author']
+        token: str = json['token']
+        conn = get_db()
+        if not author in online.keys():
+            return False
+        if online[author]['token'] != token:
+            return False
+        if json['body'] == '':
+            return False
+        body: str = bbcode.render_html(json['body'])
+        attachments: list = json.get('attachments', [])
+        time: str = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
+        msg = {
+            'author': author,
+            'datetime': time,
+            'body': body,
+            'attachments': attachments
+        }
+        cur = conn.execute('INSERT INTO CHAT (BODY, CHANNEL_ID, AUTHOR) VALUES (?,?,?) RETURNING ID;', (
+            body,
+            online[author]['channel'],
+            author
+        ))
+        (chat_id, ) = cur.fetchone()
+        msg.update({'id': chat_id})
+        if attachments != []:
+            for a in attachments:
+                conn.execute(
+                    'INSERT INTO ATTACHMENT (CHAT_ID, RESOURCE_ID) VALUES (?,?);', (chat_id, a))
+        emit('msg_deliver', msg, to=online[author]['channel'])
+
+    def on_heartbeat(self, json):
+        try:
+            if online[json['nick']]['token'] != json['token']:
+                return False
+        except:
+            return False
+        online[json['nick']]['is_alive'] = True
+        online[json['nick']]['last_heartbeat'] = time_milisecond()
+
+    def on_updating_channel(self):
+        emit('channel_updated')

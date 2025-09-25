@@ -164,6 +164,10 @@ timeout = 5000 # in milisecond, use for heartbeat
 # Make sure X-Forwarded-For and X-Forwarded-Host are properly set!
 proxy_fix = false
 
+# For socketio connections
+# Do set a propper value in production enviroment
+cors_allowed_origins = "https://me.example"
+
 
 [custom]
 title = "The YACS"

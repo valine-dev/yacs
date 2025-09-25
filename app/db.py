@@ -1,25 +1,24 @@
-import os
 import sqlite3
+from flask import g, current_app
+from os import path
+from .definitions import SCHEMA
 from logging import Logger
-from app.definitions import SCHEMA
 
 
-def get_db(path: str, logger: Logger) -> sqlite3.Connection:
-    if not os.path.exists(path):
-        logger.warning("Database not found!")
-        conn = sqlite3.connect(path, check_same_thread=False, autocommit=True)
+def init_db(db_path: str):
+    if not path.exists(db_path):
+        current_app.logger.warning("Database not found!")
+        conn = sqlite3.connect(db_path, check_same_thread=False, autocommit=True)
         conn.executescript(SCHEMA)
-        logger.info("Database created and initialized.")
-        return conn
+        current_app.logger.info("Database created and initialized.")
+        conn.close()
 
-    conn = sqlite3.connect(path, check_same_thread=False, autocommit=True)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='CHAT';")
-    if cursor.fetchone() is None:
-        logger.warning("Database not initialized or is CORRUPTED!")
-        conn.executescript(SCHEMA)
-        logger.info("Database initialized.")
-    cursor.close()
-    logger.info("Database good!")
-    return conn
+def get_db():
+    if 'db' not in g:
+        g.db = sqlite3.connect(current_app.config['db']['path'], check_same_thread=False, autocommit=True)
+    return g.db
+
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db:
+        db.close()

@@ -183,7 +183,7 @@ async function switch_channel(channel_id) {
     msgbox.scrollTop = msgbox.scrollHeight;
 }
 
-async function load_more(count = 30) {
+async function load_more(count = 15) {
     var msgbox = document.getElementById("msgbox");
     var new_msg = await fetch(
         `/messages/${current_channel}?count=${count}&offset=${msgbox.childElementCount}`,

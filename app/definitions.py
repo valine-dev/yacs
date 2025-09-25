@@ -45,6 +45,7 @@ CONFIG_DEFAULT = {
         'log_level': 'INFO',
         'timeout': 5000,
         'proxy_fix': False,
+        'cors_allowed_origins': '*'
     },
     'custom': {
         'title': 'The YACS',
