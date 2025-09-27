@@ -27,4 +27,4 @@ module-name = "app"
 module-root = ""
 
 [project.scripts]
-yacs-run = "app:main"
+yacscript = "app:main"

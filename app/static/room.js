@@ -11,6 +11,10 @@ var socket = io({
     },
 });
 
+function makeAuth() {
+    return `Basic ${btoa(`${NICK}:${TOKEN}`)}`
+}
+
 async function heartbeat() {
     await socket.emit("heartbeat", {
         nick: NICK,
@@ -55,12 +59,31 @@ socket.on("kicked", async () => {
     window.location.replace("/");
 })
 
+socket.on("msg_deliver", async (msg) => {
+    var msgbox = document.getElementById("msgbox");
+    var rendered = await render_msg(msg);
+    msgbox.appendChild(rendered);
+    msgbox.scrollTop = msgbox.scrollHeight;
+    if (!is_muted) {
+        if (msg["author"] == NICK){
+            document.getElementById("send_sfx").play();
+        } else {
+            document.getElementById("msg_sfx").play();
+        }
+        
+    }
+});
+
+socket.on("msg_delete", async (json) => {
+    document.querySelector(`#rendered-msg-${json["id"]}`).remove()
+})
+
 async function refresh_channels() {
     var clist = document.getElementById("channel_list");
     clist.innerHTML = "";
     var resp = await fetch("/channels", {
         headers: {
-            Authorization: `Basic ${NICK} ${TOKEN}`,
+            Authorization: makeAuth(),
         },
     });
     var channels = await resp.json();
@@ -81,21 +104,6 @@ async function refresh_channels() {
     }
 }
 
-socket.on("msg_deliver", async (msg) => {
-    var msgbox = document.getElementById("msgbox");
-    var rendered = await render_msg(msg);
-    msgbox.appendChild(rendered);
-    msgbox.scrollTop = msgbox.scrollHeight;
-    if (!is_muted) {
-        if (msg["author"] == NICK){
-            document.getElementById("send_sfx").play();
-        } else {
-            document.getElementById("msg_sfx").play();
-        }
-        
-    }
-});
-
 async function msg_send() {
     var editor = document.getElementById("editor");
     var body = editor.value;
@@ -108,7 +116,7 @@ async function msg_send() {
     for (var key in file_buffer) {
         resp = await fetch(`/submit_upload?submit=${file_buffer[key]}`, {
             headers: {
-                Authorization: `Basic ${NICK} ${TOKEN}`,
+                Authorization: makeAuth(),
             },
         });
         if (resp.ok) {
@@ -189,7 +197,7 @@ async function load_more(count = 15) {
         `/messages/${current_channel}?count=${count}&offset=${msgbox.childElementCount}`,
         {
             headers: {
-                Authorization: `Basic ${NICK} ${TOKEN}`,
+                Authorization: makeAuth(),
             },
         }
     );
@@ -206,7 +214,7 @@ async function refresh_fellows() {
     var resp = await fetch("/fellows",
         {
             headers: {
-                Authorization: `Basic ${NICK} ${TOKEN}`,
+                Authorization: makeAuth(),
             },
         }
     )
@@ -292,12 +300,12 @@ async function upload() {
 
     xhr.setRequestHeader(
         "Authorization",
-        `Basic ${NICK} ${TOKEN}`
+        makeAuth()
     )
     xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
             var progress = document.getElementById("upload_progress")
-            const percentComplete = (event.loaded / event.total) * 100;
+            var percentComplete = (event.loaded / event.total) * 100;
             progress.setAttribute("style", `width: ${percentComplete}%`);
         }
     });
@@ -323,8 +331,8 @@ async function upload() {
         indicator.innerHTML = "";
         is_uploading = false;
     };
-    xhr.send(data)
     is_uploading = true;
+    xhr.send(data)
 }
 
 async function delete_attach(node) {
@@ -334,7 +342,7 @@ async function delete_attach(node) {
         var deleting_id = file_buffer[deleting_name];
         var response = await fetch(`/submit_upload?recall=${deleting_id}`, {
             headers: {
-                Authorization: `Basic ${NICK} ${TOKEN}`,
+                Authorization: makeAuth(),
             },
         });
         if (response.ok) {

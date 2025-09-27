@@ -7,7 +7,7 @@ import tomllib
 from werkzeug.middleware.proxy_fix import ProxyFix
 from string import ascii_lowercase, ascii_uppercase
 from flask_socketio import SocketIO
-from .db import init_db, close_db
+from .db import init_db, close_db, migrate, clean_resources
 
 
 def deep_update(dst: dict, src: dict) -> None:
@@ -62,19 +62,25 @@ def create_app(config=None) -> tuple[Flask, SocketIO]:
 
     # Attach routes
     app.register_blueprint(views)
-    socketio.on_namespace(DefaultNamespace())
+    socketio.on_namespace(DefaultNamespace('/'))
     app.teardown_appcontext(close_db)
 
     # Making sure that db is propperly initialized
     with app.app_context():
         init_db(app.config['db']['path'])
+        if migrate(app.config['db']['path']):
+            app.logger.info('Your database is now fixed :)')
 
     return (app, socketio)
 
+@click.group()
+def main():
+    '''Simple chat service.'''
+    pass
 
-@click.command()
+@main.command()
 @click.option('-c', '--config', default=None, help='Path to the config file.')
-def main(config):
+def run(config):
     '''Entry point for YACS.'''
 
     # Validate given path
@@ -111,3 +117,14 @@ def main(config):
         port=app.config["app"]["port"],
         debug=app.config["DEBUG"],
     )
+
+@main.command()
+@click.option('-c', '--config', default=None, help='Path to the config file.')
+def clean(config):
+    '''Clean not needed resources from disk'''
+    (app, socketio) = create_app(config)
+    with app.app_context():
+        clean_resources(
+            app.config['db']['path'],
+            app.config['res']['path'],
+        )

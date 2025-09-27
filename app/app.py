@@ -106,12 +106,12 @@ def handle_error(err):
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.headers.get('Authorization', default=None)
+        auth = request.authorization
         if not auth:
             return Response(status=401)
-
         try:
-            _, nick, token = str(auth).split(' ')
+            nick = auth.get('username')
+            token = auth.get('password')
         except:
             return Response(status=401)
         else:
@@ -125,26 +125,11 @@ def login_required(f):
     return decorated
 
 
-def admin_login_required(f):
+def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.headers.get('Authorization', default=None)
-        if not auth:
+        if not online[g.nick]['is_admin']:
             return Response(status=401)
-
-        try:
-            _, nick, token = str(auth).split(' ')
-        except:
-            return Response(status=401)
-        else:
-            if nick not in online.keys():
-                return Response(status=401)
-            if not online[nick]['token'] == token:
-                return Response(status=401)
-            if not online[nick]['is_admin']:
-                return Response(status=401)
-            g.nick = nick
-            g.token = token
         return f(*args, **kwargs)
     return decorated
 
@@ -421,7 +406,6 @@ def get_fellows():
 
 @views.route('/resource_meta/<resource_id>')
 def get_resource_meta(resource_id):
-
     conn = get_db()
     row = conn.execute(
         'SELECT FILE_NAME, MIME_TYPE FROM RESOURCE WHERE IS_EXPIRED=0 AND UUID=?;', (resource_id, ))
@@ -442,19 +426,26 @@ def get_resource(resource_id):
     row = row.fetchone()
     if not row:
         return Response(status=404)
+
     extension = path.splitext(row[0])[1]
-    file_path = path.abspath(path.join(
+    file_path_A = path.abspath(path.join(
         current_app.config['res']['path'],
         f'{resource_id}.{extension}'
     ))
-    if path.exists(file_path):
-        return send_file(file_path, mimetype=row[1], download_name=row[0])
-    file_path = path.abspath(path.join(
+    file_path_B = path.abspath(path.join(
         current_app.config['res']['path'],
         f'{resource_id}{extension}'
     ))
-    if path.exists(file_path):
+
+    file_path = ''
+    if path.exists(file_path_A):
+        file_path = file_path_A
+    if path.exists(file_path_B):
+        file_path = file_path_B
+
+    if file_path != '':
         return send_file(file_path, mimetype=row[1], download_name=row[0])
+
     try:
         conn.execute(
             'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
@@ -469,7 +460,8 @@ def get_resource(resource_id):
 
 
 @views.route('/channel', methods=['POST', 'PUT', 'DELETE'])
-@admin_login_required
+@login_required
+@admin_required
 def channel_control():
     conn = get_db()
     if request.method == 'POST':
@@ -508,7 +500,8 @@ def channel_control():
 
 
 @views.route('/online/<name>', methods=['DELETE'])
-@admin_login_required
+@login_required
+@admin_required
 def kick_user(name):
     if name in online.keys():
         clean_user(name)
@@ -517,7 +510,8 @@ def kick_user(name):
 
 
 @views.route('/resource/<res_id>', methods=['DELETE'])
-@admin_login_required
+@login_required
+@admin_required
 def delete_resource(res_id):
     conn = get_db()
     try:
@@ -533,7 +527,8 @@ def delete_resource(res_id):
 
 
 @views.route('/message/<int:id>', methods=['DELETE'])
-@admin_login_required
+@login_required
+@admin_required
 def delete_msg(id: int):
     conn = get_db()
     try:
@@ -544,6 +539,33 @@ def delete_msg(id: int):
     except Exception as e:
         current_app.logger.error(f'Error deleting msg {id} with exception {e}')
         return Response(status=400)
+    else:
+        # Cleaning up attachments
+        attachs_cur = conn.execute(
+            'SELECT RESOURCE_ID FROM ATTACHMENT WHERE CHAT_ID=?',
+            (id, )
+        )
+        attachs = attachs_cur.fetchall()
+        for attach in attachs:
+            try:
+                conn.execute(
+                'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
+                attach
+            )
+            except:
+                current_app.logger.warning(f'Marking {attach[0]} to expired failed.')
+
+        cur = conn.execute(
+            'SELECT CHANNEL_ID FROM CHAT WHERE ID=?',
+            (id, )
+        )
+        channel = cur.fetchone()[0]
+        emit(
+            'msg_delete',
+            {'id': id},
+            namespace='/',
+            to=channel
+        )
     return Response(status=200)
 
 
