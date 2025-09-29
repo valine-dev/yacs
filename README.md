@@ -5,6 +5,9 @@ Inspired by [LE-CHAT-PHP](https://github.com/DanWin/le-chat-php)
 
 ![Splash Screen](docs/the-yacs.jpeg)
 
+## ⚠ Breaking Changes ⚠
+The following instructions are currently out of date for `main` brach.
+
 ## Featuring
 
 - Multiple channels.

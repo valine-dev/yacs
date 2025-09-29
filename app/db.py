@@ -41,15 +41,15 @@ def close_db(e=None):
     if db:
         db.close()
 
-def migrate(db_path: str):
+def migrate_db(db_path: str):
     '''Fixing schema for ATTACHMENTS'''
     if not path.exists(db_path):
         return False
     
     conn = sqlite3.connect(db_path)
-    sql = conn.execute('SELECT sql FROM sqlite_master WHERE name="ATTACHMENT";')
-    type = sql.fetchone()[0].split(',')[1]
-    if 'INTEGER' not in type:
+    sql = conn.execute('SELECT type FROM (SELECT * FROM pragma_table_info WHERE arg="ATTACHMENT") WHERE name="RESOURCE_ID";')
+    type = sql.fetchone()[0]
+    if type != 'INTEGER':
         return False
     try:
         conn.executescript(MIGRATE)
@@ -68,21 +68,10 @@ def clean_resources(db_path: str, res_path: str):
     for expired in expireds:
         extension = path.splitext(expired[0])[1]
         resource_id = expired[1]
-
-        file_path_A = path.abspath(path.join(
-            res_path,
-            f'{resource_id}.{extension}'
-        ))
-        file_path_B = path.abspath(path.join(
+        file_path = path.abspath(path.join(
             res_path,
             f'{resource_id}{extension}'
         ))
-
-        file_path = ""
-        if path.exists(file_path_A):
-            file_path = file_path_A
-        if path.exists(file_path_B):
-            file_path = file_path_B
 
         try:
             remove(file_path)

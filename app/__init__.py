@@ -1,5 +1,5 @@
-from .app import views, DefaultNamespace
-from os import makedirs, path
+from .app import routes, DefaultNamespace
+from os import makedirs, path, listdir, rename
 import click
 from flask import Flask
 from .definitions import CONFIG_DEFAULT
@@ -7,7 +7,7 @@ import tomllib
 from werkzeug.middleware.proxy_fix import ProxyFix
 from string import ascii_lowercase, ascii_uppercase
 from flask_socketio import SocketIO
-from .db import init_db, close_db, migrate, clean_resources
+from .db import init_db, close_db, migrate_db, clean_resources
 
 
 def deep_update(dst: dict, src: dict) -> None:
@@ -31,14 +31,14 @@ def create_app(config=None) -> tuple[Flask, SocketIO]:
                 except tomllib.TOMLDecodeError as e:
                     app.logger.critical(
                         f'Initialization failed while parsing config file: {e}')
-                    app.logger.warning('Starting YACS without config file...')
+                    app.logger.warning('Starting YACS without config file')
                 else:
                     top = conf.get('flask', None)
                     if top:
                         app.config.update(conf.pop('flask'))
                     deep_update(app.config, conf)
     else:
-        app.logger.warning('Starting YACS without config file...')
+        app.logger.warning('Starting YACS without config file')
 
     if not path.isdir(app.config['res']['path']):
         makedirs(app.config['res']['path'], exist_ok=True)
@@ -61,27 +61,26 @@ def create_app(config=None) -> tuple[Flask, SocketIO]:
         app, cors_allowed_origins=app.config['app']['cors_allowed_origins'])
 
     # Attach routes
-    app.register_blueprint(views)
+    app.register_blueprint(routes)
     socketio.on_namespace(DefaultNamespace('/'))
     app.teardown_appcontext(close_db)
 
     # Making sure that db is propperly initialized
     with app.app_context():
         init_db(app.config['db']['path'])
-        if migrate(app.config['db']['path']):
-            app.logger.info('Your database is now fixed :)')
+
 
     return (app, socketio)
 
 @click.group()
 def main():
-    '''Simple chat service.'''
+    '''Anonymous Internet Chatroom in Y2K'''
     pass
 
 @main.command()
 @click.option('-c', '--config', default=None, help='Path to the config file.')
-def run(config):
-    '''Entry point for YACS.'''
+def start(config):
+    '''Starting YACS'''
 
     # Validate given path
     if config is not None:
@@ -120,11 +119,25 @@ def run(config):
 
 @main.command()
 @click.option('-c', '--config', default=None, help='Path to the config file.')
-def clean(config):
+def gc(config):
     '''Clean not needed resources from disk'''
-    (app, socketio) = create_app(config)
+    (app, _) = create_app(config)
     with app.app_context():
         clean_resources(
             app.config['db']['path'],
             app.config['res']['path'],
         )
+
+@main.command()
+@click.option('-c', '--config', default=None, help='Path to the config file.')
+def migrate(config):
+    '''Migrate your YACServer from 0.3.x to 0.4'''
+    (app, _) = create_app(config)
+    with app.app_context():
+        if migrate_db(app.config['db']['path']):
+            click.echo("Database fixed!")
+        res_path = path.abspath(app.config['res']['path'])
+        for file in [x for x in listdir(res_path) if path.isfile(path.join(res_path, x))]:
+            corrected = file.replace('..', '.')
+            rename(path.join(res_path, file), path.join(res_path, corrected))
+        click.echo("Resource naming fixed!")

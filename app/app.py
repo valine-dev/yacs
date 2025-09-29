@@ -11,17 +11,18 @@ from collections import OrderedDict
 import bbcode
 from flask import (Response, redirect, render_template,
                    request, send_file, jsonify, current_app, Blueprint, g)
+from flask.views import MethodView
 from flask_socketio import (emit, join_room,
                             leave_room, disconnect, Namespace)
 from webargs import fields, validate
-from webargs.flaskparser import use_args
+from webargs.flaskparser import use_args, use_kwargs
 from werkzeug.utils import secure_filename
 from captcha.image import ImageCaptcha
 
 from .db import get_db
 
 
-views = Blueprint('views', __name__)
+routes = Blueprint('views', __name__)
 
 # Caches
 candidates: OrderedDict = OrderedDict()
@@ -90,8 +91,8 @@ def garbage_collect():
             clean_user(k)
 
 
-@views.errorhandler(422)
-@views.errorhandler(400)
+@routes.errorhandler(422)
+@routes.errorhandler(400)
 def handle_error(err):
     headers = err.data.get('headers', None)
     messages = err.data.get('messages', ['Invalid request.'])
@@ -128,7 +129,10 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not online[g.nick]['is_admin']:
+        auth = request.authorization
+        if not auth:
+            return Response(status=401)
+        if not online[auth.get('username')]['is_admin']:
             return Response(status=401)
         return f(*args, **kwargs)
     return decorated
@@ -137,7 +141,7 @@ def admin_required(f):
 # --- VIEW ROUTES ---
 # ROUTES HERE ARE SPECIFIALLY FOR RENDERING VIEWS
 
-@views.route('/')
+@routes.route('/')
 def landing_page():
     # get possible failure callback
     failed = request.args.get('failed', default=None)
@@ -168,7 +172,7 @@ LOGIN_FORM = {
 }
 
 
-@views.route('/auth', methods=['POST'])
+@routes.route('/auth', methods=['POST'])
 @use_args(LOGIN_FORM, location='form')
 def auth(form):
     if form['phrase'] != current_app.config['app']['admin_phrase']:
@@ -198,7 +202,7 @@ def auth(form):
     return redirect('/?failed=CAPTCHA+failed')
 
 
-@views.route('/room-preview', methods=['POST', 'GET'])
+@routes.route('/room-preview', methods=['POST', 'GET'])
 def room_preview():
     if not current_app.config['DEBUG']:
         return Response(status=404)
@@ -231,7 +235,7 @@ ROOM_FORM = {
 }
 
 
-@views.route('/room')
+@routes.route('/room')
 @use_args(ROOM_FORM, location='query')
 def room_view(auth):
     nick = auth['nickname']
@@ -260,7 +264,7 @@ def room_view(auth):
 # ROUTES HERE NEED TO BE CALLED BY LOGGED IN CLIENT SCRIPT
 
 
-@views.route('/channels')
+@routes.route('/channels')
 @login_required
 def get_channels():
     nick = g.get('nick')
@@ -277,9 +281,9 @@ def get_channels():
     return channels
 
 
-@views.route('/index_upload', methods=['POST'])
+@routes.route('/cache_upload', methods=['POST'])
 @login_required
-def upload_index():
+def upload_cache():
     uploader = g.get('nick')
     if online[uploader]['is_uploading']:
         return Response(status=429)
@@ -310,7 +314,7 @@ def upload_index():
     return {'uuid': id, 'file_name': name}
 
 
-@views.route('/submit_upload')
+@routes.route('/submit_upload')
 @login_required
 def upload_submit():
     user = g.get('nick')
@@ -346,17 +350,12 @@ def upload_submit():
     return Response(status=400)
 
 
-@views.route('/messages/<int:channel_id>')
+@routes.route('/messages/<int:channel_id>')
+@use_kwargs({'count': fields.Int(load_default=15), 'offset': fields.Int(load_default=0)}, location='query')
 @login_required
-def get_messages(channel_id):
+def get_messages(channel_id, count, offset):
     if channel_id == 0:
         return Response(status=404)
-    count = 30
-    if 'count' in request.args.keys():
-        count = int(request.args['count'])
-    offset = 0
-    if 'offset' in request.args.keys():
-        offset = int(request.args['offset'])
 
     # check your fucking privilege
     nick = g.get('nick')
@@ -392,7 +391,7 @@ def get_messages(channel_id):
     return resp
 
 
-@views.route('/fellows')
+@routes.route('/fellows')
 @login_required
 def get_fellows():
     user = g.get('nick')
@@ -404,7 +403,7 @@ def get_fellows():
 # --- PUBLIC APIS ---
 
 
-@views.route('/resource_meta/<resource_id>')
+@routes.route('/resource_meta/<resource_id>')
 def get_resource_meta(resource_id):
     conn = get_db()
     row = conn.execute(
@@ -418,7 +417,7 @@ def get_resource_meta(resource_id):
     }
 
 
-@views.route('/resource/<resource_id>')
+@routes.route('/resource/<resource_id>')
 def get_resource(resource_id):
     conn = get_db()
     row = conn.execute(
@@ -428,20 +427,10 @@ def get_resource(resource_id):
         return Response(status=404)
 
     extension = path.splitext(row[0])[1]
-    file_path_A = path.abspath(path.join(
-        current_app.config['res']['path'],
-        f'{resource_id}.{extension}'
-    ))
-    file_path_B = path.abspath(path.join(
+    file_path = path.abspath(path.join(
         current_app.config['res']['path'],
         f'{resource_id}{extension}'
     ))
-
-    file_path = ''
-    if path.exists(file_path_A):
-        file_path = file_path_A
-    if path.exists(file_path_B):
-        file_path = file_path_B
 
     if file_path != '':
         return send_file(file_path, mimetype=row[1], download_name=row[0])
@@ -459,23 +448,25 @@ def get_resource(resource_id):
 # --- ADMIN APIS ---
 
 
-@views.route('/channel', methods=['POST', 'PUT', 'DELETE'])
-@login_required
-@admin_required
-def channel_control():
-    conn = get_db()
-    if request.method == 'POST':
+class ChannelAPI(MethodView):
+    decorators = [login_required, admin_required]
+
+    def __init__(self):
+        self.conn = get_db()
+
+    def post(self):
         try:
             name = request.get_json()['name']
         except:
             return Response(status=415)
-        conn.execute(
+        self.conn.execute(
             'INSERT INTO CHANNEL (NAME, ADMIN_ONLY) VALUES (?, 0)', (name, ))
         return Response(status=200)
-    elif request.method == 'PUT':
+
+    def put(self):
         if 'sw_priv' in request.args.keys():
             id = int(request.args['sw_priv'])
-            conn.execute(
+            self.conn.execute(
                 'UPDATE CHANNEL SET ADMIN_ONLY = 1 - ADMIN_ONLY WHERE ID=?;',
                 (id,)
             )
@@ -483,23 +474,26 @@ def channel_control():
         elif 'name' in request.args.keys() and 'id' in request.args.keys():
             id = int(request.args['id'])
             name = request.args['name']
-            conn.execute(
+            self.conn.execute(
                 'UPDATE CHANNEL SET NAME=? WHERE ID=?;',
                 (name, id)
             )
             return Response(status=200)
-    elif request.method == 'DELETE':
+
+    def delete(self):
         if 'id' in request.args.keys():
             id = request.args['id']
-            conn.execute(
+            self.conn.execute(
                 'UPDATE CHANNEL SET IS_DELETED=1 WHERE ID=?;',
                 (id, )
             )
             return Response(status=200)
-    return Response(status=404)
 
 
-@views.route('/online/<name>', methods=['DELETE'])
+routes.add_url_rule('/channel', view_func=ChannelAPI.as_view('channel'))
+
+
+@routes.route('/online/<name>', methods=['DELETE'])
 @login_required
 @admin_required
 def kick_user(name):
@@ -509,7 +503,7 @@ def kick_user(name):
     return Response(status=400)
 
 
-@views.route('/resource/<res_id>', methods=['DELETE'])
+@routes.route('/resource/<res_id>', methods=['DELETE'])
 @login_required
 @admin_required
 def delete_resource(res_id):
@@ -526,7 +520,7 @@ def delete_resource(res_id):
     return Response(status=200)
 
 
-@views.route('/message/<int:id>', methods=['DELETE'])
+@routes.route('/message/<int:id>', methods=['DELETE'])
 @login_required
 @admin_required
 def delete_msg(id: int):
@@ -549,11 +543,12 @@ def delete_msg(id: int):
         for attach in attachs:
             try:
                 conn.execute(
-                'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
-                attach
-            )
+                    'UPDATE RESOURCE SET IS_EXPIRED=1 WHERE UUID=?;',
+                    attach
+                )
             except:
-                current_app.logger.warning(f'Marking {attach[0]} to expired failed.')
+                current_app.logger.warning(
+                    f'Marking {attach[0]} to expired failed.')
 
         cur = conn.execute(
             'SELECT CHANNEL_ID FROM CHAT WHERE ID=?',

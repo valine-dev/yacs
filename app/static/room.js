@@ -296,7 +296,7 @@ async function upload() {
     var indicator = document.getElementById("upload_indicator")
     indicator.innerHTML = `<p style="margin: 0;">Uploading ${fname}...</p><div class="progress-indicator segmented" style="width: 100%; flex: 1; height:50%"><span id="upload_progress" class="progress-indicator-bar" style="width: 0%;"></span></div>`
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/index_upload", true);
+    xhr.open("POST", "/cache_upload", true);
 
     xhr.setRequestHeader(
         "Authorization",
