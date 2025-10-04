@@ -69,11 +69,14 @@ def clean_user(name):
             item['sid'],
             item['namespace']
         )
-    emit(
-        'kicked',
-        to=item['sid'],
-        namespace=item['namespace']
-    )
+    try:
+        emit(
+            'kicked',
+            to=item['sid'],
+            namespace=item['namespace']
+        )
+    except:
+        current_app.logger.warning(f"Failed sending kicking event to {name}.")
     disconnect(
         item['sid'],
         item['namespace']
