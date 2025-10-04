@@ -75,12 +75,12 @@ def clean_user(name):
             to=item['sid'],
             namespace=item['namespace']
         )
-    except:
-        current_app.logger.warning(f"Failed sending kicking event to {name}.")
-    disconnect(
+        disconnect(
         item['sid'],
         item['namespace']
     )
+    except:
+        current_app.logger.warning(f"Failed sending kicking event to {name}.")
     current_app.logger.info(f'User {name} logged out.')
 
 
